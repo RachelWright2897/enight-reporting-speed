@@ -153,7 +153,11 @@ make_figures <- function(in_dir) {
     ) +
     theme_medsl() +
     note_theme +
-    theme(legend.position = "right") +
+    theme(
+      legend.position = "right",
+      legend.box.spacing = unit(2, "lines"),                       # legend further from the chart
+      legend.title = element_text(margin = margin(b = 8))          # title clear of the color bar
+    ) +
     guides(color = guide_colorbar(order = 1), size = guide_legend(order = 2), shape = guide_legend(order = 3))
 
   ggsave_medsl(fs::path(fig_dir, "1_county_timeline.png"), p1, width = 9, height = 5)
@@ -166,7 +170,9 @@ make_figures <- function(in_dir) {
   p2 <- ggplot(reporting, aes(n_reports, n)) +
     geom_col(fill = medsl_colors[["steel"]], width = 0.75) +
     facet_wrap(~county) +
-    scale_x_continuous(breaks = pretty_breaks()) +
+    # at most ~4 whole-number ticks per panel, so labels never run into each other
+    scale_x_continuous(breaks = \(l) unique(round(pretty(l, n = 4)))) +
+    scale_y_continuous(breaks = \(l) unique(round(pretty(l, n = 3)))) +
     labs(
       title = "Number of Precinct Reports by County",
       subtitle = paste0(scope, ", ", comma(nrow(x$precincts)), " precincts"),
@@ -174,7 +180,8 @@ make_figures <- function(in_dir) {
       caption = caption, tag = join_notes(county_note, simulated_note)
     ) +
     theme_medsl() +
-    note_theme
+    note_theme +
+    theme(panel.spacing = unit(1.5, "lines"))
 
   ggsave_medsl(fs::path(fig_dir, "2_reports_per_precinct.png"), p2, width = 8, height = 5)
 
@@ -211,18 +218,27 @@ make_figures <- function(in_dir) {
   # --- 4. Race-wide running margin vs. the final result ---------------------------
   race <- x$race |> filter(total > 0)
   final_margin <- last(race$final_margin)
+  # the first few batches swing wildly (R +45 on a handful of ballots), so start once
+  # 5% of the final vote is in, the same start the swing counts use
+  race <- filter(race, share_counted >= 0.05)
+  # put the "Final" label where the running margin is farthest from it, on the
+  # opposite side of the dashed line, so the two never overlap
+  gap <- race$margin - final_margin
+  label_at <- which.max(abs(gap))
+  label_below <- gap[label_at] > 0
+  headroom <- 0.08 * diff(range(c(race$margin, final_margin)))
   race <- in_window(race)
 
   p4 <- ggplot(race, aes(time, margin)) +
     geom_hline(yintercept = 0, color = "#444444", linewidth = 0.4) +
     geom_hline(yintercept = final_margin, color = medsl_colors[["gold"]], linewidth = 0.6, linetype = "dashed") +
-    # label at the left end of the line, above it, with headroom so it isn't clipped
-    annotate("text", x = min(race$time), y = final_margin, vjust = -0.6, hjust = 0,
+    annotate("text", x = race$time[label_at], y = final_margin,
+             vjust = if (label_below) 1.6 else -0.6, hjust = 0,
              label = paste("Final:", label_margin(round(final_margin, 1))),
              family = "StyreneB-Regular", size = 3.4, color = "#444444") +
-    expand_limits(y = final_margin + 0.08 * diff(range(c(race$margin, final_margin)))) +
+    expand_limits(y = final_margin + if (label_below) -headroom else headroom) +
     geom_step(color = "#444444", linewidth = 0.6) +
-    geom_point(aes(color = share_counted), size = 2.2) +
+    geom_point(aes(color = share_counted), size = 1.4) +
     # share can top 100% briefly before a downward correction; show it as fully counted
     scale_color_medsl_blue_c(labels = percent, limits = c(0, 1), breaks = c(0, 0.5, 1), oob = squish,
                              name = "Share of final vote counted") +
@@ -236,7 +252,11 @@ make_figures <- function(in_dir) {
       caption = caption, tag = join_notes(late_note, simulated_note)
     ) +
     theme_medsl() +
-    note_theme
+    note_theme +
+    theme(
+      axis.text = element_text(size = rel(0.8)), axis.title = element_text(size = rel(0.85)),
+      legend.text = element_text(size = rel(0.8)), legend.title = element_text(size = rel(0.85))
+    )
 
   ggsave_medsl(fs::path(fig_dir, "4_running_margin.png"), p4, width = 8, height = 5)
 
@@ -258,7 +278,7 @@ make_figures <- function(in_dir) {
 
   # 5. How fast each method was counted
   p5 <- ggplot(filter(method_run, total > 0), aes(time, share_counted, color = method)) +
-    geom_step(linewidth = 0.9) +
+    geom_step(linewidth = 0.5) +
     method_scale +
     scale_y_continuous(labels = percent) +
     expand_limits(y = c(0, 1)) +
@@ -266,11 +286,16 @@ make_figures <- function(in_dir) {
     labs(
       title = "Share of Each Vote Method Counted Over Election Night",
       subtitle = scope,
-      x = "Time (ET)", y = "Share of the method's final votes counted",
+      x = "Time (ET)", y = "Share of method's total votes counted",
       caption = caption, tag = join_notes(late_note, simulated_note)
     ) +
     theme_medsl() +
-    note_theme
+    note_theme +
+    theme(
+      legend.title.position = "top",                   # title above the method names
+      legend.title = element_text(hjust = 0.5),
+      legend.box.spacing = unit(1.5, "lines")          # legend sits lower, toward the bottom
+    )
 
   ggsave_medsl(fs::path(fig_dir, "5_method_counted.png"), p5, width = 8, height = 5)
 
@@ -280,9 +305,9 @@ make_figures <- function(in_dir) {
     geom_hline(yintercept = 0, color = "#444444", linewidth = 0.4) +
     geom_hline(yintercept = final_margin, color = "#444444", linewidth = 0.5, linetype = "dashed") +
     annotate("text", x = max(method_run$time), y = final_margin, vjust = 1.6, hjust = 1,
-             label = paste("All methods, final:", label_margin(round(final_margin, 1))),
+             label = paste0("Final vote margin (all methods): ", label_margin(round(final_margin, 1))),
              family = "StyreneB-Regular", size = 3.4, color = "#444444") +
-    geom_step(linewidth = 0.9) +
+    geom_step(linewidth = 0.5) +
     method_scale +
     scale_y_continuous(labels = \(v) label_margin(round(v, 1))) +
     time_scale +
@@ -312,7 +337,6 @@ make_figures <- function(in_dir) {
 
   p7 <- ggplot(gaps, aes(final_margin, county)) +
     geom_vline(xintercept = 0, color = "#444444", linewidth = 0.4) +
-    geom_line(aes(group = county), color = "#C4C4C4", linewidth = 0.8) +
     geom_point(aes(color = method, size = final_votes)) +
     method_scale +
     scale_size_area(max_size = 6, labels = comma, name = "Votes") +
@@ -325,24 +349,25 @@ make_figures <- function(in_dir) {
     ) +
     theme_medsl() +
     note_theme +
-    theme(legend.position = "right")
+    theme(legend.position = "right", legend.box.spacing = unit(2.5, "lines"))
 
   ggsave_medsl(fs::path(fig_dir, "7_method_margin_by_county.png"), p7, width = 8, height = 5.5)
 
-  # --- 8-9. Swing: vote method mix vs. reporting speed ------------------------------
+  # --- 8. Swing: sources of interim deviation ----------------------------------------
   # Only precincts that reported more than once can swing at all, so a precinct that
-  # reported everything at once would look stable by construction; both figures
-  # leave those out.
+  # reported everything at once would look stable by construction; figure 8 leaves
+  # those out. (The speed-by-method-gap grid that was figure 9 is no longer drawn;
+  # its inputs stay in precinct_swing.csv.)
   if (is.null(x$swing)) {
-    message("Wrote 7 figures to ", fig_dir, " (no swing tables; rebuild to add figures 8-9)")
+    message("Wrote 7 figures to ", fig_dir, " (no swing tables; rebuild to add figure 8)")
     return(invisible(fig_dir))
   }
   multi <- x$swing |> filter(n_reports >= 2, is.finite(swing_max), final_total >= min_precinct_votes)
   multi_geos <- multi$geo
 
   # 8. Average interim deviation, split into method mix and within-method drift
-  component_levels <- c(total = "Total deviation", mix = "From which methods were counted",
-                        within = "Within vote methods")
+  component_levels <- c(total = "Total deviation", mix = "Between-method reporting differences",
+                        within = "Within-method reporting differences")
   component_colors <- c("#0B2E4F", "#C0BA79", "#948DE5")   # navy, gold, purple (palette.md)
   interim <- x$decomp |> filter(geo %in% multi_geos, share_counted < 0.99)
   summarise_components <- \(d, by = NULL) summarise(d,
@@ -360,7 +385,6 @@ make_figures <- function(in_dir) {
     filter(!is.na(county))
 
   p8 <- ggplot(components, aes(dev, county)) +
-    geom_line(aes(group = county), color = "#C4C4C4", linewidth = 0.8) +
     # total as an open ring, so it stays visible when a part lands on top of it
     geom_point(aes(color = component, shape = component, size = component), stroke = 1.2) +
     scale_color_manual(values = setNames(component_colors, component_levels), name = NULL) +
@@ -373,58 +397,15 @@ make_figures <- function(in_dir) {
                         comma(length(multi_geos)), " precincts"),
       x = "Mean absolute difference from final precinct margin (pp)", y = NULL,
       caption = caption,
-      tag = join_notes("Parts can offset, so need not add to the total.", small_note, county_note, simulated_note)
+      tag = join_notes("Parts can offset.", small_note, county_note, simulated_note)
     ) +
     theme_medsl() +
     note_theme +
     theme(legend.position = "top")
 
-  ggsave_medsl(fs::path(fig_dir, "8_swing_sources.png"), p8, width = 8, height = 5.5)
+  # wide enough for the three legend entries on one line
+  ggsave_medsl(fs::path(fig_dir, "8_swing_sources.png"), p8, width = 9.5, height = 5.5)
 
-  # 9. Median swing by reporting speed and by how far apart the methods' margins were
-  grid_data <- multi |> filter(is.finite(hours_to_full), is.finite(mode_gap))
-  # thirds need spread on both axes (PA's precincts nearly all share one speed)
-  if (nrow(grid_data) < 30 || n_distinct(grid_data$hours_to_full) < 3 || n_distinct(grid_data$mode_gap) < 3) {
-    message("Wrote 8 figures to ", fig_dir, " (too little spread in speed or method gap for figure 9)")
-    return(invisible(fig_dir))
-  }
-  # days only when most precincts took that long (CA's canvass), not because of one straggler
-  speed_in_days <- quantile(grid_data$hours_to_full, 2/3) > 72
-  speed <- if (speed_in_days) grid_data$hours_to_full / 24 else grid_data$hours_to_full
-  speed_unit <- if (speed_in_days) "days" else "hours"
-  thirds <- \(v, unit, fmt = "%.1f") {
-    cuts <- unique(quantile(v, c(0, 1/3, 2/3, 1)))
-    labels <- sprintf(paste0(fmt, "–", fmt, " %s"), head(cuts, -1), cuts[-1], unit)
-    cut(v, cuts, labels = labels, include.lowest = TRUE)
-  }
-  cells <- grid_data |>
-    mutate(speed_third = thirds(speed, speed_unit), gap_third = thirds(mode_gap, "pp", "%.0f")) |>
-    summarise(median_swing = median(swing_max), precincts = n(), .by = c(speed_third, gap_third)) |>
-    filter(!is.na(speed_third), !is.na(gap_third))
-  dark <- median(range(cells$median_swing))
-
-  p9 <- ggplot(cells, aes(speed_third, gap_third, fill = median_swing)) +
-    geom_tile(color = "white", linewidth = 1.5) +
-    geom_text(aes(label = sprintf("%.1f pp\n%s precincts", median_swing, comma(precincts)),
-                  color = median_swing > dark),
-              family = "StyreneB-Regular", size = 3.3, lineheight = 0.9, show.legend = FALSE) +
-    scale_fill_medsl_blue_c(name = "Median largest\ninterim swing (pp)") +
-    scale_color_manual(values = c(`TRUE` = "white", `FALSE` = "#0B2E4F")) +
-    labs(
-      title = "Median Precinct Swing by Reporting Speed and Vote Method Gap",
-      subtitle = paste0(scope, ", ", comma(nrow(grid_data)), " precincts in thirds on each axis"),
-      x = paste0("Time from first results to 99% of precinct counted (", speed_unit, ")"),
-      y = "Gap between vote methods' final margins",
-      caption = caption,
-      tag = join_notes("Swing: largest gap between an interim and the final precinct margin.",
-                       small_note, simulated_note)
-    ) +
-    theme_medsl() +
-    note_theme +
-    theme(panel.grid = element_blank(), legend.position = "right")
-
-  ggsave_medsl(fs::path(fig_dir, "9_swing_speed_vs_mode.png"), p9, width = 8.5, height = 5.5)
-
-  message("Wrote 9 figures to ", fig_dir)
+  message("Wrote 8 figures to ", fig_dir)
   invisible(fig_dir)
 }

@@ -31,6 +31,10 @@ Rscript R/01_build.R "<dropbox>/26_general/GA/clean" sen            # new run fo
 Rscript R/02_figures.R output/2026-11-03_21-05-00/GA_sen            # redraw figures for one race
 ```
 
+**Dress rehearsal:** `Rscript R/05_mock_run.R` simulates one two-party state (ZM) and runs
+it through every step, saving the snapshots and that run's output under `mock_run/`
+(git ignores it).
+
 `Rscript R/00_simulate.R` writes two fake states (ZZ, ZY) to `data/simulated/`. With
 no arguments, 01 and 03 run on that, and 02 redraws ZZ_sen in the latest run.
 
@@ -47,7 +51,7 @@ pull more than 2% below its feed's earlier peak is dropped as a broken scrape (p
 pages, or pulls that moved votes between precincts, as CA Orange did June 15-16);
 missing votes count as 0.
 
-The margin figures (3, 8, 9) leave out precincts with fewer than 20 final votes, since
+The margin figures (3, 8) leave out precincts with fewer than 20 final votes, since
 one ballot moves their margin by many points. Figure 3 stops at 100% counted and
 notes how many reports fell beyond it.
 
@@ -81,9 +85,9 @@ notes how many reports fell beyond it.
 | `county_method_summary.csv` | The same, per county x method |
 | `precinct_report_decomposition.csv` | Each precinct report's deviation, split into method mix and within-method drift |
 | `precinct_swing.csv` | Per precinct: swing, speed, vote method gap, and mean absolute deviation by part |
-| `figures/` | 1–4: county count timeline, reports per precinct, interim vs final precinct margins, running race margin. 5–7, by vote method: share counted over time, running margin, final margin by method and county. 8–9, swing: sources of interim deviation, median swing by speed and vote method gap |
+| `figures/` | 1–4: county count timeline, reports per precinct, interim vs final precinct margins, running race margin. 5–7, by vote method: share counted over time, running margin, final margin by method and county. 8, swing: sources of interim deviation, split into between-method and within-method reporting differences |
 
-Figures 5–9 are skipped for states whose sources don't split votes by method (only `all`).
+Figures 5–8 are skipped for states whose sources don't split votes by method (only `all`).
 
 ## Cross-state comparison (`output/{run}/comparison/`)
 

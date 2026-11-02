@@ -103,8 +103,6 @@ vote is in:
 | File | Contents |
 |---|---|
 | `race_swing_summary.csv` | Per race: hours to 50/90/99% counted, snapshots, big moves (also counted from the start), lead changes, largest single move, final margin |
-| `1_big_moves_by_speed.png` | Big moves against speed, one dot per race |
-| `2_lead_changes_by_speed.png` | Lead changes against speed |
 | `3_speed_moves_leads_by_race.png` | All three measures for every race, fastest at top |
 
 **Benchmarks after poll close**, following Shaikh and Stewart, "Why the Wait?" (2026): at 1
@@ -119,7 +117,6 @@ first results. For states that span two time zones the earlier close is used.
 |---|---|
 | `race_benchmarks.csv` | Per race x benchmark: share reported, signed and absolute shift |
 | `4_share_reported_by_benchmark.png` | Share reported at each benchmark, by race |
-| `5_distance_from_final_by_benchmark.png` | Absolute shift at each benchmark, one line per race |
 | `6_share_vs_distance_by_benchmark.png` | Share reported against absolute shift at 1, 4 and 12 hours |
 
 Races whose margin isn't meaningful can be listed in `config/{election folder}_exclude.csv`

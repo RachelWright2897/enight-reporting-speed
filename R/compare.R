@@ -1,6 +1,7 @@
 # Cross-state comparison: do states that report faster have fewer swings in the
 # statewide margin? compare_states() reads every race in one run folder and writes
-# {run}/comparison/race_swing_summary.csv plus three figures.
+# {run}/comparison/race_swing_summary.csv and race_benchmarks.csv plus three
+# figures (3, 4, 6; figures 1, 2 and 5 were dropped).
 #
 # Swing here is frequency, measured on the statewide running margin:
 #   big moves     snapshots where the margin moved more than 1 point from the
@@ -163,40 +164,6 @@ compare_states <- function(run_dir) {
     plot.tag.position = c(0.99, 0.02),
     plot.tag = element_text(size = 7, colour = "#666666", hjust = 1, vjust = 0)
   )
-  speed_scale <- scale_x_log10(
-    labels = \(h) ifelse(h >= 48, paste0(round(h / 24), " days"), paste0(h, " h")),
-    breaks = c(1, 2, 4, 8, 24, 72, 168, 336)
-  )
-
-  # label_zero = FALSE labels only races with at least one event, when most have none
-  scatter <- \(y, title, y_lab, label_zero = TRUE, extra_note = NULL) {
-    labelled <- if (label_zero) races else filter(races, .data[[y]] > 0)
-    ggplot(races, aes(hours_to_90, .data[[y]], color = state)) +
-      geom_point(size = 3) +
-      ggrepel::geom_text_repel(data = labelled, aes(label = label), family = "StyreneB-Regular", size = 3,
-                               show.legend = FALSE, seed = 1, min.segment.length = 0.3) +
-      scale_color_manual(values = state_colors, name = "State") +
-      speed_scale +
-      scale_y_continuous(breaks = \(l) unique(floor(pretty(l))), limits = c(0, NA)) +
-      labs(
-        title = title, subtitle = scope,
-        x = "Hours from first results to 90% of the final vote counted (log scale)", y = y_lab,
-        caption = caption, tag = notes(extra_note, counting_note, excluded_note)
-      ) +
-      theme_medsl() +
-      note_theme +
-      theme(legend.position = "right")
-  }
-
-  p1 <- scatter("big_moves", "Big Margin Moves by Statewide Reporting Speed",
-                paste0("Snapshots where the margin moved more than ", big_move_pp, " point"))
-  ggsave_medsl(fs::path(out_dir, "1_big_moves_by_speed.png"), p1, width = 9, height = 5.5)
-
-  p2 <- scatter("lead_changes", "Lead Changes by Statewide Reporting Speed",
-                "Times the leader in the running count changed",
-                label_zero = FALSE, extra_note = "Labels: races with a lead change.")
-  ggsave_medsl(fs::path(out_dir, "2_lead_changes_by_speed.png"), p2, width = 9, height = 5.5)
-
   # 3. Every race, fastest at top, with all three measures side by side
   panels <- c(hours_to_90 = "Hours to 90% counted",
               big_moves = paste0("Moves of more than ", big_move_pp, " point"),
@@ -229,7 +196,7 @@ compare_states <- function(run_dir) {
     theme(legend.position = "right", panel.spacing.x = unit(2, "lines"))
   ggsave_medsl(fs::path(out_dir, "3_speed_moves_leads_by_race.png"), p3, width = 10, height = 6.5)
 
-  # --- 4-6. Benchmarks after poll close (Shaikh and Stewart) -----------------------
+  # --- 4 and 6. Benchmarks after poll close (Shaikh and Stewart) -------------------
   bench <- benchmarks |>
     filter(!excluded) |>
     mutate(benchmark = factor(benchmark, levels = names(benchmark_hours)))
@@ -259,25 +226,6 @@ compare_states <- function(run_dir) {
     note_theme +
     theme(legend.position = "right")
   ggsave_medsl(fs::path(out_dir, "4_share_reported_by_benchmark.png"), p4, width = 9, height = 6.5)
-
-  # 5. How far each race's two-party share was from its final value at each benchmark
-  measure <- if (all(bench$shift_measure == "Republican share")) "Republican" else "two-party"
-  p5 <- ggplot(filter(bench, !is.na(abs_shift)), aes(benchmark, abs_shift, color = state, group = race_id)) +
-    geom_line(linewidth = 0.6, alpha = 0.8) +
-    geom_point(size = 2.2) +
-    scale_color_manual(values = state_colors, name = "State") +
-    scale_y_continuous(limits = c(0, NA)) +
-    labs(
-      title = "Distance From Final Two-Party Share After Poll Close",
-      subtitle = scope,
-      x = "Time after poll close", y = "Distance from final two-party share (pp)",
-      caption = caption,
-      tag = notes("Primaries: the eventual winner's share; generals: the Republican share.", excluded_note)
-    ) +
-    theme_medsl() +
-    note_theme +
-    theme(legend.position = "right")
-  ggsave_medsl(fs::path(out_dir, "5_distance_from_final_by_benchmark.png"), p5, width = 9, height = 5.5)
 
   # 6. Speed against convergence at the election-night benchmarks
   night <- bench |> filter(benchmark %in% c("1 hour", "4 hours", "12 hours"), !is.na(abs_shift))

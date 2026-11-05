@@ -1,7 +1,8 @@
-# Functions for turning enightdata snapshots into precinct-level reporting events.
+# Functions for turning enightdata snapshots into the running tallies the
+# post-election margin figures (code/fig4-fig7, code/compare_states.R) plot.
 #
 # Input: the timestamped files cbs-enr writes after every scrape,
-#   {path_dropbox}/{election_folder}/{STATE}/clean/{STATE}_{county}_{timestamp}.parquet
+#   {election folder}/{STATE}/clean/{STATE}_{county}_{timestamp}.parquet
 # (plus a .csv copy of the latest one). Each file is a full snapshot in the
 # enightmodels schema (one row per candidate x method x geo), so the night is the
 # sequence of those files.
@@ -274,18 +275,6 @@ race_running <- function(pt) {
     )
 }
 
-#' One row per precinct report (a snapshot where the precinct changed)
-precinct_reports <- function(pt, race) {
-  race_final <- last(race$margin)
-  pt |>
-    filter(changed) |>
-    mutate(
-      increment_dev_from_race_final = increment_margin - race_final,
-      minutes_since_prev = as.numeric(difftime(time, lag(time), units = "mins")),
-      .by = geo
-    )
-}
-
 #' County x snapshot vote arrivals, for the count timeline
 county_updates <- function(reports) {
   reports |>
@@ -298,50 +287,6 @@ county_updates <- function(reports) {
       .by = c(county, county_cbs, time)
     ) |>
     arrange(county, time)
-}
-
-#' Per-precinct reporting summary
-precinct_summary <- function(pt, reports) {
-  reports |>
-    summarise(
-      n_reports = n(),
-      first_report = min(time),
-      last_report = max(time),
-      median_gap_mins = median(minutes_since_prev, na.rm = TRUE),
-      first_report_share_counted = share_counted[1],
-      first_report_dev = dev_from_final[1],
-      .by = c(geo, county_cbs, county)
-    ) |>
-    right_join(
-      distinct(pt, geo, county_cbs, county, final_total, final_margin),
-      by = c("geo", "county_cbs", "county")
-    ) |>
-    mutate(n_reports = coalesce(n_reports, 0L))
-}
-
-#' Per-county reporting summary
-county_summary <- function(precincts, updates) {
-  precincts |>
-    summarise(
-      precincts = n(),
-      precincts_reporting = sum(n_reports > 0),
-      median_reports_per_precinct = median(n_reports[n_reports > 0]),
-      max_reports_per_precinct = max(n_reports),
-      first_report = first_time(na.omit(first_report)),
-      last_report = last_time(na.omit(last_report)),
-      median_abs_first_report_dev = median(abs(first_report_dev), na.rm = TRUE),
-      .by = c(county, county_cbs)
-    ) |>
-    left_join(
-      summarise(updates,
-        update_times = n(),
-        largest_update_share = max(votes_added) / sum(votes_added),
-        votes_removed = sum(votes_removed),
-        .by = county
-      ),
-      by = "county"
-    ) |>
-    arrange(first_report)
 }
 
 # --- Vote method -------------------------------------------------------------
@@ -412,148 +357,74 @@ method_summary <- function(mt, running, by = NULL) {
     filter(final_votes > 0)
 }
 
-# --- Swing: reporting speed vs. vote method -----------------------------------
-
-#' Split each precinct report's deviation from the precinct's final margin in two
+#' Ballots counted by vote method over time, across every contest in a clean/ folder
 #'
-#' At any report, the precinct margin is the vote-weighted average of its
-#' per-method margins. Replacing each method's interim margin with its final one
-#' gives the margin explained by which methods were in so far (`mix`):
-#'   dev_mix    = mix - final margin     (which methods had been counted)
-#'   dev_within = actual - mix           (drift inside the methods counted)
-#' and dev_mix + dev_within = dev_from_final.
-swing_decomposition <- function(mt, reports) {
-  final_m <- mt |>
-    slice_max(time, n = 1, by = c(geo, method), with_ties = FALSE) |>
-    transmute(geo, method, final_m_total = total,
-              final_m_margin = if_else(total > 0, 100 * (a - b) / total, NA_real_))
-
-  mt |>
-    semi_join(select(reports, geo, time), by = c("geo", "time")) |>
-    left_join(final_m, by = c("geo", "method")) |>
-    summarise(
-      actual = 100 * (sum(a) - sum(b)) / sum(total),
-      mix = sum((total * final_m_margin)[final_m_total > 0]) / sum(total[final_m_total > 0]),
-      .by = c(geo, county, time)
-    ) |>
-    inner_join(select(reports, geo, time, final_margin, share_counted, dev_from_final),
-               by = c("geo", "time")) |>
-    mutate(dev_mix = mix - final_margin, dev_within = actual - mix) |>
-    # a report where the precinct briefly showed zero votes has no margin (0/0)
-    filter(is.finite(dev_from_final), is.finite(dev_mix))
-}
-
-#' One row per precinct: how far its interim margins swung, how fast it finished
-#' reporting, and how far apart its vote methods' final margins were
-precinct_swing <- function(decomp, pt, mt, race) {
-  # Clock starts when the race had its first real results (1% of the final vote),
-  # which is robust to a stray early test pull
-  t0 <- min(race$time[race$share_counted >= 0.01])
-
-  full <- pt |>
-    filter(final_total > 0) |>
-    summarise(full_time = min(time[share_counted >= 0.99]), final_total = last(final_total), .by = geo)
-
-  # Methods too small to have a stable margin (a handful of provisionals) are left out
-  gaps <- mt |>
-    slice_max(time, n = 1, by = c(geo, method), with_ties = FALSE) |>
-    filter(total > 0) |>
-    mutate(margin = 100 * (a - b) / total, share = total / sum(total), .by = geo) |>
-    filter(total >= 10, share >= 0.05) |>
-    summarise(
-      n_methods = n(),
-      mode_gap = if (n() >= 2) max(margin) - min(margin) else NA_real_,
-      .by = geo
-    )
-
-  decomp |>
-    summarise(
-      n_reports = n(),
-      swing_max = max(abs(dev_from_final)),
-      first_dev = dev_from_final[which.min(time)],
-      mean_abs_dev = mean(abs(dev_from_final[share_counted < 0.99])),
-      mean_abs_mix = mean(abs(dev_mix[share_counted < 0.99])),
-      mean_abs_within = mean(abs(dev_within[share_counted < 0.99])),
-      .by = c(geo, county)
-    ) |>
-    inner_join(full, by = "geo") |>
-    mutate(hours_to_full = as.numeric(difftime(full_time, t0, units = "hours"))) |>
-    left_join(gaps, by = "geo")
-}
-
-#' A new output folder named for when this pipeline run started
+#' The feeds report votes per contest, not ballots cast, so ballots are estimated per precinct,
+#' method and snapshot as the most votes in any one contest there. That undercounts only by the
+#' undervote in the most-voted contest (typically 1-3% at the top of the ticket). Every contest
+#' the feeds carry is vote-for-one (Senate, governor, House, AG, SOS), so no contest counts a
+#' ballot twice. Each contest is read through read_snapshots(), so mislabeled, broken and reset
+#' pulls are dropped as they are for the race figures, and a precinct missing from a snapshot
+#' carries its last count forward.
 #'
-#' The pipeline runs many times over election night; each run gets its own
-#' output/{YYYY-MM-DD_HH-MM-SS}/ so no run overwrites another.
-new_run_dir <- function(root = "output", started = Sys.time()) {
-  dir <- fs::path(root, format(started, "%Y-%m-%d_%H-%M-%S", tz = TZ))
-  # two runs started within the same second get _2, _3, ...
-  base <- dir
-  i <- 1
-  while (fs::dir_exists(dir)) {
-    i <- i + 1
-    dir <- paste0(base, "_", i)
-  }
-  fs::dir_create(dir)
+#' Returns one row per method x snapshot: ballots, and share_counted (ballots over the method's
+#' ballots at the last snapshot).
+ballots_by_method <- function(clean_dir, election_date = NULL) {
+  contests <- list_contests(clean_dir) |>
+    mutate(district = if_else(is_statewide(contest), NA_integer_, district)) |>
+    distinct()
+  per_contest <- pmap(contests, \(contest, district) {
+    read_snapshots(clean_dir, contest, district, election_date) |>
+      summarise(votes = sum(votes), .by = c(geo, method, time)) |>
+      mutate(race = paste(contest, district))
+  }) |>
+    list_rbind()
+
+  per_contest |>
+    complete(nesting(race, geo, method), time = sort(unique(per_contest$time))) |>
+    arrange(race, geo, method, time) |>
+    fill(votes, .by = c(race, geo, method)) |>
+    replace_na(list(votes = 0)) |>
+    summarise(ballots = max(votes), .by = c(geo, method, time)) |>
+    summarise(ballots = sum(ballots), .by = c(method, time)) |>
+    arrange(time) |>
+    mutate(share_counted = ballots / last(ballots), .by = method)
 }
 
-#' The most recent run folder under output/
-latest_run_dir <- function(root = "output") {
-  runs <- fs::dir_ls(root, type = "directory", regexp = "/\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}(_\\d+)?$")
-  if (length(runs) == 0) stop("No run folders in ", root)
-  max(runs)
-}
-
-#' Build and save every reporting table for one state's race
+#' Every table the figures need for one state's race, kept in memory
 #'
-#' Writes output/{STATE}_{contest}[_{district}]/ and returns that path.
-build_race <- function(clean_dir, target_contest, target_district = NA_integer_, out_root = "output",
-                       election_date = NULL) {
+#' race_id is {STATE}_{contest}[_{district}], e.g. GA_gov_rep, TX_house_7.
+build_race <- function(clean_dir, target_contest, target_district = NA_integer_, election_date = NULL) {
   race_id <- paste0(
     basename(dirname(clean_dir)), "_", target_contest,
     if (!is.na(target_district)) paste0("_", target_district) else ""
   )
-  out_dir <- fs::path(out_root, race_id)
 
   snaps <- read_snapshots(clean_dir, target_contest, target_district, election_date)
   sides <- margin_sides(snaps)
-  fs::dir_create(out_dir)
 
   pt <- precinct_snapshots(snaps, sides)
   race <- race_running(pt)
-  reports <- precinct_reports(pt, race)
-  updates <- county_updates(reports)
-  precincts <- precinct_summary(pt, reports)
-  counties <- county_summary(precincts, updates)
+  reports <- filter(pt, changed)
 
   mt <- method_snapshots(snaps, sides)
   method_run <- method_running(mt)
-  county_method_run <- method_running(mt, by = "county")
-  methods <- method_summary(mt, method_run)
-  county_methods <- method_summary(mt, county_method_run, by = "county")
 
-  decomp <- swing_decomposition(mt, reports)
-  swing <- precinct_swing(decomp, pt, mt, race)
-
-  saveRDS(
-    list(race = race, reports = reports, updates = updates, precincts = precincts,
-         counties = counties, method_running = method_run, methods = methods,
-         county_methods = county_methods, decomp = decomp, swing = swing,
-         margin_label = attr(sides, "label"),
-         race_id = race_id, simulated = str_detect(clean_dir, "data/simulated")),
-    fs::path(out_dir, "reporting.rds")
+  message(race_id, ": ", n_distinct(snaps$time), " snapshots, ", n_distinct(pt$geo), " precincts. Margin is ",
+          attr(sides, "label"), ".")
+  list(
+    race = race,
+    updates = county_updates(reports),
+    # final votes per county, to pick the largest counties for the county figures
+    county_votes = pt |> slice_max(time, n = 1, by = geo, with_ties = FALSE) |>
+      summarise(votes = sum(total), .by = county) |> arrange(desc(votes)),
+    method_running = method_run,
+    methods = method_summary(mt, method_run),
+    county_methods = method_summary(mt, method_running(mt, by = "county"), by = "county"),
+    margin_label = attr(sides, "label"),
+    race_id = race_id,
+    # A feed with only statewide totals (geo with no county code, or county 000)
+    # has no counties to show, so figure 7 is skipped
+    has_counties = any(str_detect(pt$county_cbs, "^\\d{3}$") & pt$county_cbs != "000", na.rm = TRUE)
   )
-  readr::write_csv(reports, fs::path(out_dir, "precinct_reports.csv"))
-  readr::write_csv(precincts, fs::path(out_dir, "precinct_summary.csv"))
-  readr::write_csv(counties, fs::path(out_dir, "county_summary.csv"))
-  readr::write_csv(methods, fs::path(out_dir, "method_summary.csv"))
-  readr::write_csv(county_methods, fs::path(out_dir, "county_method_summary.csv"))
-  readr::write_csv(decomp, fs::path(out_dir, "precinct_report_decomposition.csv"))
-  readr::write_csv(swing, fs::path(out_dir, "precinct_swing.csv"))
-
-  message(
-    race_id, ": ", n_distinct(snaps$time), " snapshots, ", nrow(precincts), " precincts, ",
-    nrow(reports), " precinct reports. Margin is ", attr(sides, "label"), "."
-  )
-  out_dir
 }

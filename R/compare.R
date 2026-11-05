@@ -1,7 +1,6 @@
 # Cross-state comparison: do states that report faster have fewer swings in the
-# statewide margin? compare_states() reads every race in one run folder and writes
-# {run}/comparison/race_swing_summary.csv and race_benchmarks.csv plus three
-# figures (3, 4, 6; figures 1, 2 and 5 were dropped).
+# statewide margin? compare_states() takes every race build_race() returned and
+# writes the comparison figures 3, 4 and 6 to out_dir (run by code/compare_states.R).
 #
 # Swing here is frequency, measured on the statewide running margin:
 #   big moves     snapshots where the margin moved more than 1 point from the
@@ -16,7 +15,7 @@
 # reported and the shift in two-party share from the final result. In a general
 # the shift is the Republican two-party share minus its final value (positive =
 # blue shift still to come); in a primary it is the eventual winner's share. Poll
-# close times come from config/{election folder}_poll_close.csv.
+# close times come from helper_files/{election folder}_poll_close.csv.
 
 library(dplyr)
 library(stringr)
@@ -96,51 +95,49 @@ race_benchmarks <- function(x, close_time = NULL) {
            close_time = close_time, close_source = close_source)
 }
 
-compare_states <- function(run_dir) {
-  run <- readr::read_csv(fs::path(run_dir, "run_summary.csv"), show_col_types = FALSE)
-  out_dir <- fs::dir_create(fs::path(run_dir, "comparison"))
+#' Figures 3, 4 and 6 for every race in `races`, written to `out_dir`
+#'
+#' `folder` is the election folder (26_primaries), which names the config files:
+#' helper_files/{folder}_exclude.csv lists races whose margin isn't meaningful, and
+#' helper_files/{folder}_poll_close.csv has each state's poll close time (state, poll_close_et).
+compare_states <- function(races, out_dir, folder, config_dir = "helper_files") {
+  if (length(races) < 2) {
+    message("Fewer than two races to compare; no comparison figures")
+    return(invisible(out_dir))
+  }
 
-  # Races whose margin isn't meaningful, listed in config/{election folder}_exclude.csv
-  exclude_file <- fs::path("config", paste0(basename(run$source[1]), "_exclude.csv"))
+  exclude_file <- fs::path(config_dir, paste0(folder, "_exclude.csv"))
   excluded <- if (fs::file_exists(exclude_file)) {
     readr::read_csv(exclude_file, show_col_types = FALSE)
   } else {
     tibble(race_id = character(), reason = character())
   }
 
-  summary <- run |>
-    filter(status == "done") |>
-    pull(output) |>
-    purrr::map(\(d) race_swing_summary(readRDS(fs::path(d, "reporting.rds")))) |>
+  summary <- races |>
+    purrr::map(race_swing_summary) |>
     purrr::list_rbind() |>
     mutate(excluded = race_id %in% excluded$race_id)
-  readr::write_csv(summary, fs::path(out_dir, "race_swing_summary.csv"))
 
-  # Poll close times, config/{election folder}_poll_close.csv (state, poll_close_et)
-  close_file <- fs::path("config", paste0(basename(run$source[1]), "_poll_close.csv"))
+  close_file <- fs::path(config_dir, paste0(folder, "_poll_close.csv"))
   closes <- if (fs::file_exists(close_file)) {
     readr::read_csv(close_file, col_types = readr::cols(.default = "c")) |>
       transmute(state, close_time = lubridate::ymd_hm(poll_close_et, tz = "America/New_York"))
   } else {
     tibble(state = character(), close_time = as.POSIXct(character(), tz = "America/New_York"))
   }
-  benchmarks <- run |>
-    filter(status == "done") |>
-    pull(output) |>
-    purrr::map(\(d) {
-      x <- readRDS(fs::path(d, "reporting.rds"))
-      st <- str_sub(x$race_id, 1, 2)
-      race_benchmarks(x, closes$close_time[match(st, closes$state)])
-    }) |>
+  benchmarks <- races |>
+    purrr::map(\(x) race_benchmarks(x, closes$close_time[match(str_sub(x$race_id, 1, 2), closes$state)])) |>
     purrr::list_rbind() |>
     left_join(select(summary, race_id, state, label, excluded), by = "race_id")
-  readr::write_csv(benchmarks, fs::path(out_dir, "race_benchmarks.csv"))
 
   races <- filter(summary, !excluded)
   if (nrow(races) < 2) {
-    message("Fewer than two races to compare; wrote the summary table only")
+    message("Fewer than two races to compare; no comparison figures")
     return(invisible(out_dir))
   }
+  # overwrite: clear the last run's figures only once there are new ones to write
+  fs::dir_create(out_dir)
+  fs::file_delete(fs::dir_ls(out_dir, glob = "*.png"))
 
   # States are unordered, non-partisan categories: brand categorical palette (palette.md)
   states <- sort(unique(races$state))
@@ -151,7 +148,6 @@ compare_states <- function(run_dir) {
   )
 
   caption <- medsl_caption(source = "State and county reporting sites, via enightdata")
-  folder <- basename(run$source[1])
   scope <- paste0(nrow(races), " statewide races in ", length(states), " states, ", folder)
   excluded_note <- if (any(summary$excluded)) {
     paste0("Excluded: ", paste(summary$label[summary$excluded], collapse = ", "), ".")
@@ -165,7 +161,7 @@ compare_states <- function(run_dir) {
     plot.tag = element_text(size = 7, colour = "#666666", hjust = 1, vjust = 0)
   )
   # 3. Every race, fastest at top, with all three measures side by side
-  panels <- c(hours_to_90 = "Hours to 90% counted",
+  panels <- c(hours_to_90 = "Hours to 90% reported",
               big_moves = paste0("Moves of more than ", big_move_pp, " point"),
               lead_changes = "Lead changes")
   long <- races |>

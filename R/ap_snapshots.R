@@ -28,7 +28,8 @@ ap_missing_warned <- new.env()
 #' `at` is NULL), so a figure whose own feed stopped early can say how much of the count it
 #' covers. `district` NA means the statewide race. Returns list(pct, total, expected, time):
 #' pct on 0-100 as AP reports it, total the votes AP has counted, expected AP's implied total
-#' vote (total / pct, NA at 0%), and time the snapshot's fetch time. NULL when there's no AP
+#' vote (total / pct, NA at 0%), time the snapshot's fetch time, and margin AP's D-R margin
+#' (ap_race_margin()). NULL when there's no AP
 #' folder, no snapshot by then, or AP doesn't carry the race.
 ap_race_at <- function(state, contest, district = NA, at = NULL, election_date = ELECTION_DATE) {
   dir <- tryCatch(ap_dir(), error = \(e) NULL)
@@ -64,11 +65,49 @@ ap_race_at <- function(state, contest, district = NA, at = NULL, election_date =
       return(list(
         pct = race$pct_reporting, total = race$total_votes,
         expected = if (race$pct_reporting > 0) race$total_votes / (race$pct_reporting / 100) else NA_real_,
-        time = race$fetched_at
+        time = race$fetched_at,
+        margin = ap_race_margin(sub("ap_contests_", "ap_candidates_", f), race$source_race_id)
       ))
     }
   }
   NULL
+}
+
+ap_history_cache <- new.env()
+
+#' AP's D minus R margin (percentage points of all votes) for one race in one candidates file,
+#' NA when the file is missing or the race lacks either a Democrat or a Republican
+ap_race_margin <- function(cand_file, race_id) {
+  if (!file.exists(cand_file)) return(NA_real_)
+  cands <- nanoparquet::read_parquet(cand_file, col_select = c("source_race_id", "party", "votes")) |>
+    dplyr::filter(source_race_id == race_id)
+  if (!all(c("dem", "rep") %in% cands$party) || sum(cands$votes, na.rm = TRUE) == 0) return(NA_real_)
+  with(cands, 100 * (sum(votes[party == "dem"], na.rm = TRUE) - sum(votes[party == "rep"], na.rm = TRUE)) /
+                sum(votes, na.rm = TRUE))
+}
+
+#' When AP first reported a race at `pct` percent or more, as a fetch time (NA if it never did)
+#'
+#' Reads every AP contests snapshot once per run (cached), so captions can date a percent
+#' reported to the pull where AP first reached it rather than to its newest pull.
+ap_first_reached <- function(state, contest, district = NA, pct = 99, election_date = ELECTION_DATE) {
+  dir <- tryCatch(ap_dir(), error = \(e) NULL)
+  if (is.null(dir)) return(as.POSIXct(NA))
+  if (!identical(ap_history_cache$dir, dir)) {
+    files <- list.files(dir, paste0("^ap_contests_", ap_ts_regex, "\\.parquet$"), full.names = TRUE)
+    ap_history_cache$rows <- purrr::map(files, \(f) {
+      nanoparquet::read_parquet(f, col_select = c("state", "office", "district", "source_race_id",
+                                                  "pct_reporting", "fetched_at"))
+    }) |>
+      purrr::list_rbind()
+    ap_history_cache$dir <- dir
+  }
+  hits <- ap_history_cache$rows |>
+    dplyr::filter(.data$state == .env$state, office == contest,
+                  if (is.na(.env$district)) is.na(.data$district) else .data$district %in% .env$district,
+                  startsWith(source_race_id, format(as.Date(election_date), "%Y%m%d")),
+                  pct_reporting >= .env$pct)
+  if (nrow(hits) == 0) as.POSIXct(NA) else min(hits$fetched_at)
 }
 
 #' Contests rows for the statewide races of the given AP office codes on election day: no

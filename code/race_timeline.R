@@ -1,6 +1,6 @@
 # Vote count updates from the AP feed, one figure per state: one lane for each of the state's
-# U.S. Senate and governor races (race_timeline_offices below), a dot each time AP's statewide
-# count changed, sized by votes added and colored by their margin
+# U.S. Senate and governor races (race_timeline_offices below), and along each lane one dot per
+# interval of hours after polls close (timeline_bins), sized by votes added and colored by their margin
 source("setup.R")
 library(ggplot2)
 library(scales)
@@ -18,8 +18,14 @@ timeline_race_label <- function(race_name, special) {
   dplyr::if_else(special, paste(name, "(special)"), name)
 }
 
-# updates: ap_race_updates() output for one state
-plot_race_timeline <- function(updates, scope, out_file) {
+# Intervals after polls close, in hours: quarter hours for the first 3 (when most votes come
+# in), half hours to 4, then 4-6, 6-10 and everything later. Labels give each interval's range.
+timeline_bins <- c(-Inf, seq(0.25, 3, by = 0.25), 3.5, 4, 6, 10, Inf)
+timeline_bin_labels <- c(paste0(c(0, head(timeline_bins[-1], -2)), "\u2013", head(timeline_bins[-1], -1)),
+                         paste0(timeline_bins[length(timeline_bins) - 1], "+"))
+
+# updates: ap_race_updates() output for one state; close_time: when its polls closed (ET)
+plot_race_timeline <- function(updates, close_time, scope, out_file) {
   label_margin <- \(v) dplyr::case_when(
     is.na(v) ~ NA_character_,
     round(v, 1) == 0 ~ "Even",
@@ -27,16 +33,23 @@ plot_race_timeline <- function(updates, scope, out_file) {
     TRUE ~ paste0("R +", abs(v))
   )
 
-  # Hourly ticks for one night; daily ticks if counting runs on for days
-  span_hours <- as.numeric(difftime(max(updates$time), min(updates$time), units = "hours"))
-  time_scale <- if (span_hours <= 36) {
-    scale_x_datetime(
-      date_breaks = if (span_hours <= 12) "1 hour" else "3 hours", timezone = TZ,
-      labels = \(t) sub("^0", "", format(t, "%I %p", tz = TZ))
-    )
-  } else {
-    scale_x_datetime(date_breaks = "1 day", timezone = TZ, labels = \(t) sub(" 0", " ", format(t, "%b %d", tz = TZ)))
-  }
+  # Updates are grouped into intervals of hours after polls close (timeline_bins), one dot per
+  # race and interval: votes added in it, and the margin among those votes
+  updates <- updates |>
+    dplyr::mutate(
+      hours = as.numeric(difftime(time, close_time, units = "hours")),
+      bin = cut(hours, breaks = timeline_bins, labels = timeline_bin_labels, right = TRUE),
+      margin_votes = update_margin * votes_added / 100
+    ) |>
+    dplyr::summarise(
+      time = min(time),
+      margin_votes = sum(margin_votes),          # NA if any update lacks a two-party margin
+      votes_added = sum(votes_added),
+      votes_removed = sum(votes_removed),
+      .by = c(race_name, special, bin)
+    ) |>
+    dplyr::mutate(update_margin = dplyr::if_else(votes_added > 0, 100 * margin_votes / votes_added, NA_real_))
+  close_label <- sub("^0", "", format(close_time, "%I:%M %p ET", tz = TZ)) |> sub(pattern = ":00", replacement = "")
 
   # lanes in the order races first reported, earliest at the top
   updates <- updates |>
@@ -45,7 +58,7 @@ plot_race_timeline <- function(updates, scope, out_file) {
     dplyr::mutate(lane = forcats::fct_reorder(lane, first, .desc = TRUE))
   no_margin <- any(is.na(updates$update_margin[updates$votes_added > 0]))
 
-  p <- ggplot(updates, aes(time, lane)) +
+  p <- ggplot(updates, aes(bin, lane)) +
     # white outlines keep overlapping updates apart
     geom_point(
       data = dplyr::filter(updates, votes_added > 0),
@@ -68,19 +81,21 @@ plot_race_timeline <- function(updates, scope, out_file) {
     scale_fill_medsl_diverging(midpoint = 0, limits = c(-40, 40), oob = squish, na.value = "#C4C4C4",
                                 labels = label_margin, name = "Margin of added votes") +
     scale_shape_manual(values = c("Votes removed" = 4), name = NULL) +
-    time_scale +
+    scale_x_discrete(drop = FALSE) +
     labs(
       title    = "Vote Count Updates by Race Over Election Night",
       subtitle = scope,
-      x        = "Time (ET)", y = NULL,
-      caption  = medsl_caption(source = "Associated Press, via enightdata"),
-      tag      = if (no_margin) "Gray: race without both a Democrat and a Republican."
+      x        = paste0("Hours after polls closed (", close_label, ")"), y = NULL,
+      caption  = medsl_caption(source = "Associated Press"),
+      tag      = paste(c("Each dot sums a race's updates within the interval.",
+                             if (no_margin) "Gray: race without both a Democrat and a Republican."), collapse = "\n")
     ) +
     theme_medsl() +
     theme(
       legend.position = "right",
       legend.box.spacing = unit(2, "lines"),                       # legend further from the chart
       legend.title = element_text(margin = margin(b = 8)),         # title clear of the color bar
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),   # 17 interval labels
       plot.tag.position = c(0.99, 0.02),
       plot.tag = element_text(size = 7, colour = "#666666", hjust = 1, vjust = 0)
     ) +
@@ -89,14 +104,14 @@ plot_race_timeline <- function(updates, scope, out_file) {
            shape = guide_legend(order = 3))
 
   dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
-  ggsave_medsl(out_file, p, width = 9, height = max(4, 1.5 + 0.35 * nlevels(updates$lane)))
+  ggsave_medsl(out_file, p, width = 10, height = max(4.5, 2 + 0.35 * nlevels(updates$lane)))
 }
 
 # Reads every AP snapshot so far once, then writes one figure per state with a statewide race,
 # outputs/race_timeline/{st}/{st}_race_timeline_{timestamp}.png, where the timestamp is the
 # latest AP pull's time in ET. A state with no votes yet is skipped.
 race_timeline <- function(offices = race_timeline_offices, dir = ap_dir(), election_date = ELECTION_DATE,
-                          fig_root = file.path(OUTPUT_DIR, "race_timeline")) {
+                          fig_root = file.path(OUTPUT_DIR, "race_timeline"), poll_close = read_poll_close()) {
   merged <- read_ap_snapshots(dir, offices, election_date)
   timestamp <- format(max(merged$time), "%Y_%m_%d_%H_%M_%S", tz = TZ)
 
@@ -108,7 +123,9 @@ race_timeline <- function(offices = race_timeline_offices, dir = ap_dir(), elect
       } else {
         state_name <- state.name[match(st, state.abb)]
         if (is.na(state_name)) state_name <- st
-        plot_race_timeline(ap_race_updates(state_merged), paste(state_name, "statewide races"),
+        close_time <- poll_close$time[poll_close$state == st]
+        if (length(close_time) != 1) cli::cli_abort("no poll close time for {st} in helper_files")
+        plot_race_timeline(ap_race_updates(state_merged), close_time, paste(state_name, "statewide races"),
                            file.path(fig_root, st, paste0(st, "_race_timeline_", timestamp, ".png")))
       }
     }, error = function(e) cli::cli_alert_danger("{st} race timeline: {conditionMessage(e)}"))

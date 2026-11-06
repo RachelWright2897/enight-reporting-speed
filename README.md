@@ -30,7 +30,7 @@ the configured one), contest (`all` = every statewide office, the default), and 
 Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA     # running race margin
 Rscript code/fig5_method_counted.R "<dropbox>/26_general" all GA,PA     # share of each method counted, per state
 Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" sen    # running margin by method
-Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen  # final margin by method and county
+Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen  # final margin by method: statewide, and by county
 Rscript code/compare_states.R "<dropbox>/26_general" all                # cross-state comparison
 ```
 

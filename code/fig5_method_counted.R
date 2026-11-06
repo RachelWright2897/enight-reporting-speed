@@ -26,22 +26,14 @@ plot_method_counted <- function(b, state, fig_dir = file.path(OUTPUT_DIR, "fig5_
     if (!is.null(ap)) break
   }
   partial <- !is.null(ap) && ap$pct < 99
-  caption <- medsl_caption(source = "State and county reporting sites, via enightdata")
-  if (!is.null(ap)) {
-    caption <- paste0(caption, "\n", round(ap$pct), "% of votes reported (AP) as of ", as_of_et(cutoff))
-  }
+  caption <- medsl_caption(source = "state and county election websites")
+  if (!is.null(ap)) caption <- paste0(caption, "\n", ap_caption_line(ap, state, contest, NA, cutoff))
 
-  # Ends once 99% of all ballots are in (plus an hour), as the race figures do, unless the
-  # feed stopped short, in which case it runs to the feed's last snapshot
-  all_ballots <- summarise(b, ballots = sum(ballots), .by = time) |>
-    arrange(time) |>
-    mutate(share = ballots / last(ballots))
-  reached <- all_ballots$time[all_ballots$share >= 0.99 & all_ballots$ballots > 0]
-  window_end <- if (!partial && length(reached)) min(min(reached) + hours(1), cutoff) else cutoff
-  late_note <- if (window_end < cutoff) {
-    when <- format(window_end, "%b %d, %I:%M %p", tz = TZ) |> str_replace_all(c(" 0" = " "))
-    paste0("Updates after 99% counted (", when, ") not shown.")
-  }
+  # Ends 1 hour after the last update that matters, as the race figures do (vote_window())
+  all_ballots <- summarise(b, ballots = sum(ballots), .by = time) |> arrange(time)
+  window <- vote_window(all_ballots$time, all_ballots$ballots, cutoff)
+  window_end <- window$end
+  late_note <- window$note
 
   d <- b |>
     filter(ballots > 0, time <= window_end, method %in% method_levels) |>

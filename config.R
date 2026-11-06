@@ -19,11 +19,3 @@ COUNTY_CLEAN_PATH = Sys.getenv("COUNTY_CLEAN_PATH", "/d/research/medsl-enr/26_ge
 OUTPUT_DIR  = "outputs"
 CONFIG_DIR  = "helper_files"
 
-# Figures county_reporting.R draws. contest is the race whose votes are counted.
-#   district NA: the county against similar-size counties in the state
-#   district set: the county's precincts in that district against the district's other precincts
-COUNTY_REPORTING = tibble::tribble(
-  ~state, ~county, ~contest, ~district,
-  "NY", "westchester", "gov", NA,
-  "NY", "westchester", "house", 17,
-)

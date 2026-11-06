@@ -24,7 +24,7 @@ plot_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig4_running
     geom_hline(yintercept = final_margin, color = medsl_colors[["gold"]], linewidth = 0.6, linetype = "dashed") +
     annotate("text", x = race$time[label_at], y = final_margin,
              vjust = if (label_below) 1.6 else -0.6, hjust = 0,
-             label = paste0(ctx$final_word, ": ", ctx$label_margin(round(final_margin, 1))),
+             label = paste0(if (ctx$use_ap_margin) ctx$final_label else ctx$final_word, ": ", ctx$label_margin(round(final_margin, 1))),
              family = "StyreneB-Regular", size = 3.4, color = "#444444") +
     expand_limits(y = final_margin + if (label_below) -headroom else headroom) +
     geom_step(color = "#444444", linewidth = 0.6) +

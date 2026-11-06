@@ -18,6 +18,15 @@ library(ggmedsl)
 
 medsl_fonts(dpi = 300)
 
+# Define states to run for.
+# District NA: the county against similar-size counties in the state
+# Drict set: the county's precincts in that district against the district's other precincts
+COUNTY_REPORTING = tibble::tribble(
+  ~state, ~county, ~contest, ~district,
+  "NY", "westchester", "gov", NA,
+  "NY", "westchester", "house", 17,
+)
+
 # Methods as in reporting_speed.R: absentee counts as mail, and "all" (a county that doesn't
 # break out methods) can't be compared by method, so it is left out
 county_method_labels <- c(eday = "Election day", early = "Early", mail = "Mail", abs = "Mail", prov = "Provisional")
@@ -231,7 +240,7 @@ plot_county_method <- function(lines, method, focal_name, others_name, y_title, 
 # replacing the previous pass's graphs, so the folder holds one current graph per row and method
 county_reporting <- function(histories, state, county, contest, district = NA,
                              poll_close = read_poll_close(),
-                             fig_root = file.path(OUTPUT_DIR, "county_reporting")) {
+                             fig_root = file.path(OUTPUT_DIR, "fig2_county_reporting")) {
   h <- dplyr::filter(histories, .data$contest == .env$contest)
   if (!is.na(district)) h <- dplyr::filter(h, .data$district %in% .env$district)
   if (!county %in% h$county) cli::cli_abort("No {contest} {district} rows in {state}_{county}.")
@@ -304,7 +313,7 @@ county_reporting <- function(histories, state, county, contest, district = NA,
                    "graphs of the methods it reports. Totals-only counties are left out. Absentee counts as mail.")
   }
 
-  source <- "County reporting sites, via enightdata"
+  source <- "county election websites"
   race_id <- if (is.na(district)) contest else paste(contest, district, sep = "_")
   out_stem <- file.path(fig_root, state, paste0(state, "_", county, "_reporting_", race_id))
   close_time <- poll_close$time[match(state, poll_close$state)]

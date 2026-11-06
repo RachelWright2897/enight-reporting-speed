@@ -147,7 +147,7 @@ compare_states <- function(races, out_dir, folder, config_dir = "helper_files") 
     states
   )
 
-  caption <- medsl_caption(source = "State and county reporting sites, via enightdata")
+  caption <- medsl_caption(source = "state and county election websites")
   scope <- paste0(nrow(races), " statewide races in ", length(states), " states, ", folder)
   excluded_note <- if (any(summary$excluded)) {
     paste0("Excluded: ", paste(summary$label[summary$excluded], collapse = ", "), ".")

@@ -344,5 +344,5 @@ if (nrow(COUNTY_REPORTING) > 0) {
              error = function(e) cli::cli_alert_danger("{st} county reporting: {conditionMessage(e)}"))
   }
 } else {
-  cli::cli_alert_warning("COUNTY_REPORTING is empty; county_reporting.R drew nothing.")
+  cli::cli_alert_warning("COUNTY_REPORTING is empty; fig2_county_reporting_speed.R drew nothing.")
 }

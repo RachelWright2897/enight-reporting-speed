@@ -2,10 +2,10 @@
 # R/compare.R). The per-race figures are the fig*.R scripts beside this one.
 #
 # Usage (from the repo root; arguments as in R/races.R):
-#   Rscript code/compare_states.R                                  # CBS (else MEDSL) folder from config.R
-#   Rscript code/compare_states.R "<dropbox>/26_primaries"
-#   Rscript code/compare_states.R "<dropbox>/26_primaries" gov     # one contest
-#   Rscript code/compare_states.R "<dropbox>/26_primaries" all GA,PA
+#   Rscript code/comparisons_state_reporting_speed.R                                # CBS (else MEDSL) folder from config.R
+#   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries"
+#   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries" gov   # one contest
+#   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries" all GA,PA
 #
 # Writes outputs/compare_states/, replacing the last run's figures.
 source("setup.R")

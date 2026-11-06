@@ -1,5 +1,5 @@
 # Which races a post-election script runs on, from its command-line arguments, and a loop that
-# builds each one. Shared by the margin scripts in code/ (fig4-fig7, compare_states.R).
+# builds each one. Shared by the margin scripts in code/ (fig4-fig7, comparisons_state_reporting_speed.R).
 #
 #   Rscript code/<script>.R                                  # CBS (else MEDSL) folder from config.R, every statewide office
 #   Rscript code/<script>.R "<dropbox>/26_primaries"

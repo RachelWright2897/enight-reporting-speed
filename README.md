@@ -21,17 +21,17 @@ outputs/        everything code/ writes, one subfolder per script (git ignores i
 
 Run every script from this folder. Data is read from `CBS_DATA_PATH` if set, else
 `MEDSL_DATA_PATH` (default `~/Dropbox-MIT/Rachel Wright/medsl-enr`); set either in
-`~/.Renviron`. Each script writes to `outputs/{script name}/` and replaces its own last figures.
+`~/.Renviron`. Each script writes to its own folder in `outputs/` and replaces its own last figures.
 
 **Margin figures** from the state and county snapshots. Arguments: election folder (default:
 the configured one), contest (`all` = every statewide office, the default), and states:
 
 ```bash
-Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA     # running race margin
-Rscript code/fig5_method_counted.R "<dropbox>/26_general" all GA,PA     # share of each method counted, per state
-Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" sen    # running margin by method
-Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen  # final margin by method: statewide, and by county
-Rscript code/compare_states.R "<dropbox>/26_general" all                # cross-state comparison
+Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA          # running race margin
+Rscript code/fig5_method_counted.R "<dropbox>/26_general" all GA,PA          # share of each method counted, per state
+Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" sen         # running margin by method
+Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen       # final margin by method: statewide, and by county
+Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_general" all  # cross-state comparison
 ```
 
 Figures 6 and 7 are skipped for races whose sources don't split votes by method, and 7 for
@@ -44,10 +44,10 @@ Rscript code/reporting_speed.R   # votes and share reported by hour since poll c
 Rscript code/race_timeline.R     # vote count updates by race, per state
 ```
 
-**County reporting**: `Rscript code/county_reporting.R` draws each row of `COUNTY_REPORTING`
-(`config.R`) as one graph per vote method (election day, early, mail, and for a whole county
-all methods), e.g. `outputs/county_reporting/NY/NY_westchester_reporting_gov_mail.png`. It keeps
-each county's history between passes in `outputs/county_reporting/history/`.
+**County reporting**: `Rscript code/fig2_county_reporting_speed.R` draws each row of
+`COUNTY_REPORTING` (`config.R`) as one graph per vote method (election day, early, mail, and for
+a whole county all methods), e.g. `outputs/county_reporting/NY/NY_westchester_reporting_gov_mail.png`.
+It keeps each county's history between passes in `outputs/county_reporting/history/`.
 
 If the snapshots' `election` column is wrong (it records the configured date at
 scrape time), put the real dates in `helper_files/{election folder}_dates.csv`
@@ -72,7 +72,7 @@ missing votes count as 0.
 
 ## Cross-state comparison (`outputs/compare_states/`)
 
-`code/compare_states.R` compares every race it builds. Swing
+`code/comparisons_state_reporting_speed.R` compares every race it builds. Swing
 here is frequency, on the statewide running margin, counted once 5% of the final
 vote is in:
 

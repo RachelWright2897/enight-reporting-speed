@@ -1,5 +1,5 @@
 # Functions for turning enightdata snapshots into the running tallies the
-# post-election margin figures (code/fig4-fig7, code/compare_states.R) plot.
+# post-election margin figures (code/fig4-fig7, code/comparisons_state_reporting_speed.R) plot.
 #
 # Input: the timestamped files cbs-enr writes after every scrape,
 #   {election folder}/{STATE}/clean/{STATE}_{county}_{timestamp}.parquet

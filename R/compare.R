@@ -1,6 +1,6 @@
 # Cross-state comparison: do states that report faster have fewer swings in the
 # statewide margin? compare_states() takes every race build_race() returned and
-# writes the comparison figures 3, 4 and 6 to out_dir (run by code/compare_states.R).
+# writes the comparison figures 3, 4 and 6 to out_dir (run by code/comparisons_state_reporting_speed.R).
 #
 # Swing here is frequency, measured on the statewide running margin:
 #   big moves     snapshots where the margin moved more than 1 point from the

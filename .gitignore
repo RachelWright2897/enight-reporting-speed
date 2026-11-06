@@ -5,3 +5,4 @@ data/
 .RData
 .Rproj.user/
 mock_run/
+.Renviron

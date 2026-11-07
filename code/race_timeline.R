@@ -1,6 +1,9 @@
 # Vote count updates from the AP feed, one figure per state: one lane for each of the state's
-# U.S. Senate and governor races (race_timeline_offices below), and along each lane one dot per
-# interval of hours after polls close (timeline_bins), sized by votes added and colored by their margin
+# U.S. Senate and governor races (race_timeline_offices below), or with the argument "house" one
+# lane per U.S. House district, and along each lane one dot per interval of hours after polls
+# close (timeline_bins), sized by votes added and colored by their margin.
+#   Rscript code/race_timeline.R          # Senate and governor
+#   Rscript code/race_timeline.R house    # U.S. House, one lane per district
 source("setup.R")
 library(ggplot2)
 library(scales)
@@ -8,8 +11,9 @@ library(ggmedsl)
 
 medsl_fonts(dpi = 300)
 
-# The races drawn, by AP office code: each state's U.S. Senate and governor races, special
-# Senate elections included. U.S. House races, at-large seats included, are left out.
+# The statewide races drawn by default, by AP office code: each state's U.S. Senate and governor
+# races, special Senate elections included. U.S. House races (at-large seats as district 1) are
+# drawn instead with the argument "house".
 race_timeline_offices <- c("sen", "gov")
 
 # "U.S. Senate", "U.S. Senate (special)": AP's race names without the Senate class
@@ -24,8 +28,9 @@ timeline_bins <- c(-Inf, seq(0.25, 3, by = 0.25), 3.5, 4, 6, 10, Inf)
 timeline_bin_labels <- c(paste0(c(0, head(timeline_bins[-1], -2)), "\u2013", head(timeline_bins[-1], -1)),
                          paste0(timeline_bins[length(timeline_bins) - 1], "+"))
 
-# updates: ap_race_updates() output for one state; close_time: when its polls closed (ET)
-plot_race_timeline <- function(updates, close_time, scope, out_file) {
+# updates: ap_race_updates() output for one state; close_time: when its polls closed (ET).
+# by_district: lanes are U.S. House districts ("District 7"), in district order
+plot_race_timeline <- function(updates, close_time, scope, out_file, by_district = FALSE) {
   label_margin <- \(v) dplyr::case_when(
     is.na(v) ~ NA_character_,
     round(v, 1) == 0 ~ "Even",
@@ -46,16 +51,22 @@ plot_race_timeline <- function(updates, close_time, scope, out_file) {
       margin_votes = sum(margin_votes),          # NA if any update lacks a two-party margin
       votes_added = sum(votes_added),
       votes_removed = sum(votes_removed),
-      .by = c(race_name, special, bin)
+      .by = c(race_name, special, district, bin)
     ) |>
     dplyr::mutate(update_margin = dplyr::if_else(votes_added > 0, 100 * margin_votes / votes_added, NA_real_))
   close_label <- sub("^0", "", format(close_time, "%I:%M %p ET", tz = TZ)) |> sub(pattern = ":00", replacement = "")
 
-  # lanes in the order races first reported, earliest at the top
-  updates <- updates |>
-    dplyr::mutate(lane = timeline_race_label(race_name, special)) |>
-    dplyr::mutate(first = min(time), .by = lane) |>
-    dplyr::mutate(lane = forcats::fct_reorder(lane, first, .desc = TRUE))
+  # lanes in the order races first reported, earliest at the top; districts in number order
+  updates <- if (by_district) {
+    updates |>
+      dplyr::mutate(lane = paste("District", district)) |>
+      dplyr::mutate(lane = forcats::fct_reorder(lane, district, .desc = TRUE))
+  } else {
+    updates |>
+      dplyr::mutate(lane = timeline_race_label(race_name, special)) |>
+      dplyr::mutate(first = min(time), .by = lane) |>
+      dplyr::mutate(lane = forcats::fct_reorder(lane, first, .desc = TRUE))
+  }
   no_margin <- any(is.na(updates$update_margin[updates$votes_added > 0]))
 
   p <- ggplot(updates, aes(bin, lane)) +
@@ -107,12 +118,14 @@ plot_race_timeline <- function(updates, close_time, scope, out_file) {
   ggsave_medsl(out_file, p, width = 10, height = max(4.5, 2 + 0.35 * nlevels(updates$lane)))
 }
 
-# Reads every AP snapshot so far once, then writes one figure per state with a statewide race,
-# outputs/race_timeline/{st}/{st}_race_timeline_{timestamp}.png, where the timestamp is the
-# latest AP pull's time in ET. A state with no votes yet is skipped.
-race_timeline <- function(offices = race_timeline_offices, dir = ap_dir(), election_date = ELECTION_DATE,
+# Reads every AP snapshot so far once, then writes one figure per state with a race drawn,
+# outputs/race_timeline/{st}/{st}_race_timeline_{timestamp}.png (House:
+# {st}_house_race_timeline_{timestamp}.png), where the timestamp is the latest AP pull's time in
+# ET. A state with no votes yet is skipped.
+race_timeline <- function(house = FALSE, dir = ap_dir(), election_date = ELECTION_DATE,
                           fig_root = file.path(OUTPUT_DIR, "race_timeline"), poll_close = read_poll_close()) {
-  merged <- read_ap_snapshots(dir, offices, election_date)
+  offices <- if (house) "house" else race_timeline_offices
+  merged <- read_ap_snapshots(dir, offices, election_date, districts = house)
   timestamp <- format(max(merged$time), "%Y_%m_%d_%H_%M_%S", tz = TZ)
 
   for (st in sort(unique(merged$state))) {
@@ -125,11 +138,14 @@ race_timeline <- function(offices = race_timeline_offices, dir = ap_dir(), elect
         if (is.na(state_name)) state_name <- st
         close_time <- poll_close$time[poll_close$state == st]
         if (length(close_time) != 1) cli::cli_abort("no poll close time for {st} in helper_files")
-        plot_race_timeline(ap_race_updates(state_merged), close_time, paste(state_name, "statewide races"),
-                           file.path(fig_root, st, paste0(st, "_race_timeline_", timestamp, ".png")))
+        plot_race_timeline(ap_race_updates(state_merged), close_time,
+                           paste(state_name, if (house) "U.S. House races" else "statewide races"),
+                           file.path(fig_root, st, paste0(st, if (house) "_house", "_race_timeline_", timestamp, ".png")),
+                           by_district = house)
       }
     }, error = function(e) cli::cli_alert_danger("{st} race timeline: {conditionMessage(e)}"))
   }
 }
 
-tryCatch(race_timeline(), error = function(e) cli::cli_alert_danger("race_timeline: {conditionMessage(e)}"))
+tryCatch(race_timeline(house = identical(commandArgs(trailingOnly = TRUE)[1], "house")),
+         error = function(e) cli::cli_alert_danger("race_timeline: {conditionMessage(e)}"))

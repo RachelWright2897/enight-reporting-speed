@@ -236,7 +236,7 @@ plot_county_method <- function(lines, method, focal_name, others_name, y_title, 
 }
 
 # One row of COUNTY_REPORTING, from every county's history in the state (update_county_history());
-# writes outputs/county_reporting/{ST}/{ST}_{county}_reporting_{contest}[_{district}]_{method}.png,
+# writes outputs/fig2_county_reporting/{ST}/{ST}_{county}_reporting_{contest}[_{district}]_{method}.png,
 # replacing the previous pass's graphs, so the folder holds one current graph per row and method
 county_reporting <- function(histories, state, county, contest, district = NA,
                              poll_close = read_poll_close(),

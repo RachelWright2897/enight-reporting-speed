@@ -43,7 +43,7 @@ plot_method_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig6_
   # The reference line is labeled just past its end, in room the x axis leaves after the data,
   # where it can't run into the method lines
   ref_label <- paste0(
-    if (ctx$use_ap_margin) paste0("Statewide (AP,\n", round(ctx$ap_latest_pct), "% reporting)")
+    if (ctx$use_ap_margin) paste0(ctx$area, " (AP,\n", round(ctx$ap_latest_pct), "% reporting)")
     else if (ctx$partial) paste0("All methods at\n", round(ctx$ap$pct), "% reporting")
     else "Final, all\nmethods",
     ":\n", ctx$label_margin(round(ctx$final_margin, 1))

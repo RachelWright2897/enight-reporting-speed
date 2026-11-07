@@ -5,8 +5,13 @@
 #   Rscript code/<script>.R "<dropbox>/26_primaries"
 #   Rscript code/<script>.R "<dropbox>/26_primaries" gov     # one contest
 #   Rscript code/<script>.R "<dropbox>/26_primaries" all GA,PA
+#   Rscript code/<script>.R "<dropbox>/26_general" house TX   # every U.S. House district in TX
+#   Rscript code/<script>.R "<dropbox>/26_general" house_17 NY  # one district
 #
-# States without the contest, and uncontested races, are skipped with a warning.
+# The contest is "all" (every statewide office), a statewide office (sen, gov, ...), a district
+# office (house), which runs every district the state's files hold, or a district office with
+# its number (house_17). States without the contest or without snapshots, and uncontested races,
+# are skipped with a warning.
 
 #' The election folder, contest and states to run, and each state's election day
 race_run <- function(args = commandArgs(trailingOnly = TRUE)) {
@@ -45,27 +50,48 @@ state_election_date <- function(run, state) {
 }
 
 #' Builds every race in `run` (build_race()) and calls draw(x) on each; returns the races built.
-#' "all" runs every statewide office each state has (district races are left out).
+#' "all" runs every statewide office each state has (district races are left out); a district
+#' office such as "house" runs each of its districts, and "house_17" just that one.
 for_each_race <- function(run, draw = \(x) NULL) {
+  one_district <- str_match(run$contest, "^(.+)_(\\d+)$")
   jobs <- map(run$state_dirs, \(d) {
-    contests <- if (run$contest == "all") {
-      list_contests(fs::path(d, "clean")) |> filter(is_statewide(contest)) |> distinct(contest) |> pull(contest)
+    state <- basename(d)
+    contests <- tryCatch(list_contests(fs::path(d, "clean")), error = \(e) {
+      cli::cli_alert_warning("{state} skipped: {conditionMessage(e)}")
+      NULL
+    })
+    if (is.null(contests)) return(NULL)
+    races <- if (run$contest == "all") {
+      contests |> filter(is_statewide(contest)) |> distinct(contest) |> mutate(district = NA_integer_)
+    } else if (!is.na(one_district[, 1])) {
+      tibble::tibble(contest = one_district[, 2], district = as.integer(one_district[, 3]))
+    } else if (is_statewide(run$contest)) {
+      tibble::tibble(contest = run$contest, district = NA_integer_)
     } else {
-      run$contest
+      # a district office: each district the files hold. A row without a district can't be
+      # placed, so it is skipped.
+      held <- filter(contests, contest == run$contest)
+      if (any(is.na(held$district))) {
+        cli::cli_alert_warning("{state} {run$contest}: rows without a district number skipped")
+      }
+      held |> filter(!is.na(district)) |> distinct(contest, district)
     }
-    tibble::tibble(state = basename(d), dir = d, contest = contests)
+    if (nrow(races) == 0) return(NULL)
+    tibble::tibble(state = state, dir = d, contest = races$contest, district = races$district)
   }) |>
     list_rbind()
+  if (nrow(jobs) == 0) return(list())
 
-  pmap(jobs, \(state, dir, contest) {
+  pmap(jobs, \(state, dir, contest, district) {
     tryCatch(
       {
-        x <- build_race(fs::path(dir, "clean"), contest, election_date = state_election_date(run, state))
+        x <- build_race(fs::path(dir, "clean"), contest, district, election_date = state_election_date(run, state))
         draw(x)
         x
       },
       error = \(e) {
-        cli::cli_alert_warning("{state} {contest} skipped: {conditionMessage(e)}")
+        what <- if (is.na(district)) contest else paste(contest, district)
+        cli::cli_alert_warning("{state} {what} skipped: {conditionMessage(e)}")
         NULL
       }
     )

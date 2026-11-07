@@ -110,19 +110,21 @@ ap_first_reached <- function(state, contest, district = NA, pct = 99, election_d
   if (nrow(hits) == 0) as.POSIXct(NA) else min(hits$fetched_at)
 }
 
-#' Contests rows for the statewide races of the given AP office codes on election day: no
-#' district, and a race ID that starts with the election date (AP's feed can carry other dates)
-ap_statewide_races <- function(contests, offices, election_date = ELECTION_DATE) {
-  dplyr::filter(contests, office %in% offices, is.na(district),
+#' Contests rows for the given AP office codes on election day, with a race ID that starts with
+#' the election date (AP's feed can carry other dates): the statewide races (no district), or
+#' with `districts = TRUE` the district races (U.S. House, at-large seats as district 1)
+ap_races <- function(contests, offices, election_date = ELECTION_DATE, districts = FALSE) {
+  dplyr::filter(contests, office %in% offices, is.na(district) != districts,
                 startsWith(source_race_id, format(as.Date(election_date), "%Y%m%d")))
 }
 
-#' Every AP snapshot since election day for the statewide races of `offices`, candidates merged with contests
+#' Every AP snapshot since election day for the races of `offices` (statewide, or with
+#' `districts = TRUE` district races such as "house"), candidates merged with contests
 #'
 #' Each timestamp's candidates file is joined to the same timestamp's contests file on
 #' network, source_race_id and fetched_at, keeping every column of both. A timestamp
 #' missing either file (one still being written) is skipped.
-read_ap_snapshots <- function(dir, offices, election_date = ELECTION_DATE) {
+read_ap_snapshots <- function(dir, offices, election_date = ELECTION_DATE, districts = FALSE) {
   stamp <- \(kind) {
     f <- list.files(dir, paste0("^ap_", kind, "_", ap_ts_regex, "\\.parquet$"), full.names = TRUE)
     rlang::set_names(f, stringr::str_extract(basename(f), ap_ts_regex))
@@ -135,7 +137,7 @@ read_ap_snapshots <- function(dir, offices, election_date = ELECTION_DATE) {
   if (length(ts) == 0) cli::cli_abort("No AP snapshots from {election_date} on.")
 
   purrr::map(ts, \(t) {
-    contests <- ap_statewide_races(nanoparquet::read_parquet(cont_files[[t]]), offices, election_date)
+    contests <- ap_races(nanoparquet::read_parquet(cont_files[[t]]), offices, election_date, districts)
     nanoparquet::read_parquet(cand_files[[t]]) |>
       dplyr::semi_join(contests, by = ap_keys) |>
       dplyr::full_join(contests, by = ap_keys, relationship = "many-to-one")
@@ -188,10 +190,11 @@ read_poll_close <- function(path = file.path(CONFIG_DIR, paste0(ELECTION_FOLDER,
   d
 }
 
-# One row per candidate x statewide race x AP snapshot from election day on: time (ET), state,
-# office, candidate, party, votes, pct_reporting
-read_ap_votes <- function(dir = ap_dir(), offices = CONTESTS, election_date = ELECTION_DATE) {
-  read_ap_snapshots(dir, offices, election_date) |>
-    dplyr::transmute(time, state, office, candidate, party, votes, pct_reporting) |>
+# One row per candidate x race x AP snapshot from election day on: time (ET), state, office,
+# district (NA statewide), candidate, party, votes, pct_reporting. Statewide races, or with
+# `districts = TRUE` district races (offices = "house")
+read_ap_votes <- function(dir = ap_dir(), offices = CONTESTS, election_date = ELECTION_DATE, districts = FALSE) {
+  read_ap_snapshots(dir, offices, election_date, districts) |>
+    dplyr::transmute(time, state, office, district, candidate, party, votes, pct_reporting) |>
     dplyr::distinct()
 }

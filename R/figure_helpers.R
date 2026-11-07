@@ -123,13 +123,13 @@ vote_window <- function(time, total, cutoff, min_tail = 0.05) {
   list(end = end, note = note)
 }
 
-# The subtitle names the files' coverage when they hold less than this share of AP's statewide vote.
+# The subtitle names the files' coverage when they hold less than this share of AP's vote for the race.
 # Files that cover every county still trail AP by about 1% (Georgia), from votes AP counted after
 # the files' last snapshot, so the bar is set below that.
 coverage_full_share <- 0.97
 
 #' Subtitle for figures built from the state files: the race, plus, when the files cover only
-#' some counties (Texas, Michigan), how many and what share of AP's statewide vote they hold,
+#' some counties (Texas, Michigan), how many and what share of AP's vote for the race they hold,
 #' e.g. "Texas U.S. Senate, 34 counties in state files (67% of votes)"
 coverage_subtitle <- function(x, ctx) {
   coverage <- if (!is.na(ctx$ap_latest_total) && ctx$ap_latest_total > 0) last(x$race$total) / ctx$ap_latest_total
@@ -171,6 +171,8 @@ race_context <- function(x) {
     race_name <- paste0(race_name, ", ", c(dem = "Democratic", rep = "Republican")[[primary]], " primary")
   }
   state_name <- coalesce(state.name[match(state, state.abb)], state)
+  # what a race-wide total covers, for labels: the state, or a U.S. House (or other) district
+  area <- if (is.na(district)) "Statewide" else "District"
 
   # Margin labels: "D +10" / "R +10" in a general, candidate surnames in a primary
   sides <- str_split_1(x$margin_label, "–")
@@ -216,10 +218,10 @@ race_context <- function(x) {
   final_margin <- if (use_ap_margin) ap_latest$margin else files_margin
   if (use_ap_margin) {
     message(x$race_id, ": files' margin ", label_margin(round(files_margin, 1)), " differs from AP's ",
-            label_margin(round(ap_latest$margin, 1)), ", so AP's statewide margin is drawn")
+            label_margin(round(ap_latest$margin, 1)), ", so AP's ", tolower(area), " margin is drawn")
   }
   final_label <- if (use_ap_margin) {
-    paste0("Statewide margin (AP), ", round(ap_latest$pct), "% reporting")
+    paste0(area, " margin (AP), ", round(ap_latest$pct), "% reporting")
   } else if (partial) {
     paste0("Margin at ", round(ap$pct), "% reporting")
   } else {
@@ -228,7 +230,7 @@ race_context <- function(x) {
 
   list(
     state = state, contest = contest, primary = primary, district = district,
-    state_name = state_name, scope = paste0(state_name, " ", race_name),
+    state_name = state_name, scope = paste0(state_name, " ", race_name), area = area,
     label_margin = label_margin, caption = caption, cutoff = cutoff, ap = ap, partial = partial,
     final_word = if (partial) paste0("Margin at ", round(ap$pct), "% reporting") else "Final",
     use_expected = use_expected, race = race,

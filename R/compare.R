@@ -49,7 +49,9 @@ race_swing_summary <- function(x) {
   tibble(
     race_id = x$race_id,
     state = id[, 2],
-    label = paste0(id[, 2], " ", coalesce(office_short[id[, 3]], id[, 3]),
+    # "TX Senate", "GA Governor (R)" for a primary, "TX-7 House" for a district race
+    label = paste0(id[, 2], if_else(is.na(id[, 5]), "", paste0("-", id[, 5])), " ",
+                   coalesce(office_short[id[, 3]], id[, 3]),
                    if_else(is.na(id[, 4]), "", paste0(" (", str_to_upper(str_sub(id[, 4], 1, 1)), ")"))),
     margin_label = x$margin_label,
     final_margin = last(race$margin),
@@ -148,7 +150,11 @@ compare_states <- function(races, out_dir, folder, config_dir = "helper_files") 
   )
 
   caption <- medsl_caption(source = "state and county election websites")
-  scope <- paste0(nrow(races), " statewide races in ", length(states), " states, ", folder)
+  n_district <- sum(str_detect(races$race_id, "_\\d+$"))
+  kind <- if (n_district == 0) "statewide races" else if (n_district == nrow(races)) "district races" else "races"
+  scope <- paste0(nrow(races), " ", kind, " in ", length(states), " states, ", folder)
+  # one row per race in figures 3 and 4, so they grow with the race count (House runs have hundreds)
+  rows_height <- max(6.5, 1.5 + 0.11 * nrow(races))
   excluded_note <- if (any(summary$excluded)) {
     paste0("Excluded: ", paste(summary$label[summary$excluded], collapse = ", "), ".")
   } else {
@@ -190,7 +196,8 @@ compare_states <- function(races, out_dir, folder, config_dir = "helper_files") 
     theme_medsl() +
     note_theme +
     theme(legend.position = "right", panel.spacing.x = unit(2, "lines"))
-  ggsave_medsl(fs::path(out_dir, "3_speed_moves_leads_by_race.png"), p3, width = 10, height = 6.5)
+  ggsave_medsl(fs::path(out_dir, "3_speed_moves_leads_by_race.png"), p3, width = 10, height = rows_height,
+               limitsize = FALSE)
 
   # --- 4 and 6. Benchmarks after poll close (Shaikh and Stewart) -------------------
   bench <- benchmarks |>
@@ -221,7 +228,8 @@ compare_states <- function(races, out_dir, folder, config_dir = "helper_files") 
     theme_medsl() +
     note_theme +
     theme(legend.position = "right")
-  ggsave_medsl(fs::path(out_dir, "4_share_reported_by_benchmark.png"), p4, width = 9, height = 6.5)
+  ggsave_medsl(fs::path(out_dir, "4_share_reported_by_benchmark.png"), p4, width = 9, height = rows_height,
+               limitsize = FALSE)
 
   # 6. Speed against convergence at the election-night benchmarks
   night <- bench |> filter(benchmark %in% c("1 hour", "4 hours", "12 hours"), !is.na(abs_shift))

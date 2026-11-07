@@ -6,11 +6,16 @@
 #   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries"
 #   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries" gov   # one contest
 #   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_primaries" all GA,PA
+#   Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_general" house   # every U.S. House district
 #
-# Writes outputs/compare_states/, replacing the last run's figures.
+# Writes outputs/compare_states/ for statewide races ("all", the default), and
+# outputs/compare_states/{contest}/ for anything else (e.g. compare_states/house/ for every
+# U.S. House district), replacing that folder's last figures.
 source("setup.R")
 
 run <- race_run()
 races <- for_each_race(run)
-tryCatch(compare_states(races, file.path(OUTPUT_DIR, "compare_states"), run$folder, CONFIG_DIR),
+out_dir <- file.path(OUTPUT_DIR, "compare_states")
+if (run$contest != "all") out_dir <- file.path(out_dir, run$contest)
+tryCatch(compare_states(races, out_dir, run$folder, CONFIG_DIR),
          error = \(e) cli::cli_alert_danger("Comparison skipped: {conditionMessage(e)}"))

@@ -51,7 +51,13 @@ Rscript code/reporting_speed.R         # votes and share reported by hour since 
 Rscript code/reporting_speed.R house   # the same for every U.S. House district
 Rscript code/race_timeline.R           # vote count updates by race, per state
 Rscript code/race_timeline.R house     # the same with one lane per U.S. House district
+Rscript code/race_timeline.R --state GA,PA --race sen --start 19:00 --end "2026-11-04 01:00"
+Rscript code/race_timeline.R --race house_7,house_8 --state VA --start 0 --end 4   # hours after poll close
 ```
+
+`race_timeline.R` options: `--state` (postal codes), `--race` (AP office codes such as `sen,gov`,
+or `house` / `house_7`), and `--start` / `--end` (an ET time, or hours after the state's polls
+closed). A windowed figure is saved as `{ST}_race_timeline_{start}_to_{end}.png`.
 
 House reporting speed goes to `outputs/reporting_speed/{ST}/house/`, and the House timeline to
 `outputs/race_timeline/{ST}/{ST}_house_race_timeline_{timestamp}.png`.

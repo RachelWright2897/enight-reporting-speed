@@ -130,24 +130,6 @@ timeline_races <- function(race) {
   list(offices = "house", districts = districts, house = TRUE)
 }
 
-# One end of the drawn period as a time (ET): a number is hours after close_time, "HH:MM" a time
-# on election day, anything else a date and time. NULL stays NULL (no limit).
-timeline_bound <- function(x, close_time, election_date = ELECTION_DATE) {
-  if (is.null(x)) return(NULL)
-  if (grepl("^-?[0-9.]+$", x)) return(close_time + as.numeric(x) * 3600)
-  if (grepl("^\\d{1,2}:\\d{2}$", x)) x <- paste(election_date, x)
-  t <- suppressWarnings(lubridate::ymd_hms(x, tz = TZ, truncated = 1, quiet = TRUE))
-  if (is.na(t)) cli::cli_abort("Can't read {.val {x}} as a time; use \"2026-11-03 21:00\", \"21:00\" or hours after polls close.")
-  t
-}
-
-# "7 PM", "Nov 4 1:30 AM": a period's ends for the subtitle, the date only when not election day
-timeline_clock <- function(t, election_date = ELECTION_DATE) {
-  clock <- sub("^0", "", format(t, "%I:%M %p", tz = TZ)) |> sub(pattern = ":00", replacement = "")
-  day <- as.Date(format(t, "%Y-%m-%d", tz = TZ))
-  if (day == as.Date(election_date)) clock else paste(format(t, "%b", tz = TZ), as.integer(format(t, "%d", tz = TZ)), clock)
-}
-
 # updates: ap_race_updates() output for one state; close_time: when its polls closed (ET).
 # by_district: lanes are U.S. House districts ("District 7"), in district order.
 # window: the period drawn, c(start, end) in hours after polls close (-Inf/Inf for no limit);

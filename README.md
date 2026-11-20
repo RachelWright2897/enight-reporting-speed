@@ -31,10 +31,12 @@ and `--folder` (an election folder other than the configured one):
 ```bash
 Rscript code/fig4_running_margin.R --race house --state AZ                # running race margin
 Rscript code/fig5_method_counted.R --state GA                           # share of each method counted, per state
+Rscript code/fig5_method_counted.R --state GA --race sen                # the same for one race
+Rscript code/fig5_method_counted.R --state GA --race sen --start 1 --end 6   # 1 to 6 hours after polls close
 Rscript code/fig6_method_running_margin.R --race sen,gov                   # running margin by method
 Rscript code/fig7_method_margin_by_county.R --race sen                     # final margin by method: race-wide, and by county
 Rscript code/comparisons_state_reporting_speed.R                           # cross-state comparison
-Rscript code/fig6_method_running_margin.R --race house_1 --state AZ          # every Texas House district
+Rscript code/fig6_method_running_margin.R --race gov --state VA          # every Texas House district
 Rscript code/fig4_running_margin.R --race house_17 --state NY              # New York's 17th
 Rscript code/fig4_running_margin.R --folder "<dropbox>/26_primaries" --race gov
 ```
@@ -44,8 +46,13 @@ The older positional form (folder, contest, states) still works:
 
 House figures are named by race, e.g. `TX_house_7_method_running_margin.png`; figure 7's race-wide
 graph is `{race}_method_margin_districtwide.png`. The House comparison goes to
-`outputs/compare_states/house/`, beside the statewide one. Figure 5 is per state, counting ballots
-across every contest (House included), so it ignores `--race`. Figures 6 and 7 are skipped for
+`outputs/compare_states/house/`, beside the statewide one. Figure 5 without `--race` is per state,
+counting ballots across every contest (House included); with `--race` it uses that race's own votes
+by method and is named by race, e.g. `GA_sen_method_counted.png`. Figure 5 also takes `--start` and `--end`
+for the period drawn (default polls close to 3 days after), in the race timeline's forms: hours
+after polls close (`6`), a time on election day (`21:00`) or a date and time (`2026-11-06`,
+`"2026-11-06 21:00"`); `--end last` runs through the last snapshot. A windowed figure's file name
+ends `_{start}_to_{end}`. Figures 6 and 7 are skipped for
 races whose sources don't split votes by method, and 7 for race-wide-only feeds.
 
 **From the AP feed** (`{folder}/networks/ap/clean/`, or `AP_CLEAN_PATH`):
@@ -55,7 +62,7 @@ Rscript code/reporting_speed.R         # votes and share reported by hour since 
 Rscript code/reporting_speed.R house   # the same for every U.S. House district
 Rscript code/race_timeline.R           # vote count updates by race, per state
 Rscript code/race_timeline.R house     # the same with one lane per U.S. House district
-Rscript code/race_timeline.R --state GA,PA --race sen --start 19:00 --end "2026-11-04 01:00"
+Rscript code/race_timeline.R --state  --race gov --start 19:00 --end "2026-11-04 01:00"
 Rscript code/race_timeline.R --race house_1,house_5 --state AZ --start 0 --end 72   # hours after poll close
 ```
 

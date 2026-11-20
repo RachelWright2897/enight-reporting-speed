@@ -7,7 +7,9 @@
 # (plus _latest copies of each). AP reports statewide totals only: no counties, no vote methods.
 
 ap_ts_regex <- "\\d{4}_\\d{2}_\\d{2}_\\d{2}_\\d{2}_\\d{2}"
-ap_keys <- c("network", "source_race_id", "fetched_at")
+# Within one pull, candidates match contests on network and race. Not on fetched_at: the two
+# files' copies of it can differ by a microsecond, which dropped every candidate from ~7% of pulls.
+ap_keys <- c("network", "source_race_id")
 
 #' The AP clean/ folder: AP_CLEAN_PATH (config.R) if it has any snapshots, else the CBS copy, else the MEDSL backup
 ap_dir <- function() {
@@ -122,8 +124,8 @@ ap_races <- function(contests, offices, election_date = ELECTION_DATE, districts
 #' `districts = TRUE` district races such as "house"), candidates merged with contests
 #'
 #' Each timestamp's candidates file is joined to the same timestamp's contests file on
-#' network, source_race_id and fetched_at, keeping every column of both. A timestamp
-#' missing either file (one still being written) is skipped.
+#' network and source_race_id, keeping every column of both and the contests file's fetched_at.
+#' A timestamp missing either file (one still being written) is skipped.
 read_ap_snapshots <- function(dir, offices, election_date = ELECTION_DATE, districts = FALSE) {
   stamp <- \(kind) {
     f <- list.files(dir, paste0("^ap_", kind, "_", ap_ts_regex, "\\.parquet$"), full.names = TRUE)
@@ -139,6 +141,7 @@ read_ap_snapshots <- function(dir, offices, election_date = ELECTION_DATE, distr
   purrr::map(ts, \(t) {
     contests <- ap_races(nanoparquet::read_parquet(cont_files[[t]]), offices, election_date, districts)
     nanoparquet::read_parquet(cand_files[[t]]) |>
+      dplyr::select(-dplyr::any_of("fetched_at")) |>
       dplyr::semi_join(contests, by = ap_keys) |>
       dplyr::full_join(contests, by = ap_keys, relationship = "many-to-one")
   }) |>

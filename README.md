@@ -23,25 +23,29 @@ Run every script from this folder. Data is read from `CBS_DATA_PATH` if set, els
 `MEDSL_DATA_PATH` (default `~/Dropbox-MIT/Rachel Wright/medsl-enr`); set either in
 `~/.Renviron`. Each script writes to its own folder in `outputs/` and replaces its own last figures.
 
-**Margin figures** from the state and county snapshots. Arguments: election folder (default:
-the configured one), contest, and states. The contest is `all` (every statewide office, the
-default), one statewide office (`sen`, `gov`), `house` (every U.S. House district the state's
-files hold) or one district (`house_17`):
+**Margin figures** from the state and county snapshots. Options: `--state` (postal codes,
+default every state), `--race` (default `all`, every statewide office; or `sen`, `gov`, `house`
+for every U.S. House district the state's files hold, `house_17` for one; comma-separate several),
+and `--folder` (an election folder other than the configured one):
 
 ```bash
-Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA          # running race margin
-Rscript code/fig5_method_counted.R "<dropbox>/26_general" all GA,PA          # share of each method counted, per state
-Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" sen         # running margin by method
-Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen       # final margin by method: race-wide, and by county
-Rscript code/comparisons_state_reporting_speed.R "<dropbox>/26_general" all  # cross-state comparison
-Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" house TX    # every Texas House district
-Rscript code/fig4_running_margin.R "<dropbox>/26_general" house_17 NY        # New York's 17th
+Rscript code/fig4_running_margin.R --race house --state AZ                # running race margin
+Rscript code/fig5_method_counted.R --state GA                           # share of each method counted, per state
+Rscript code/fig6_method_running_margin.R --race sen,gov                   # running margin by method
+Rscript code/fig7_method_margin_by_county.R --race sen                     # final margin by method: race-wide, and by county
+Rscript code/comparisons_state_reporting_speed.R                           # cross-state comparison
+Rscript code/fig6_method_running_margin.R --race house_1 --state AZ          # every Texas House district
+Rscript code/fig4_running_margin.R --race house_17 --state NY              # New York's 17th
+Rscript code/fig4_running_margin.R --folder "<dropbox>/26_primaries" --race gov
 ```
+
+The older positional form (folder, contest, states) still works:
+`Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA`.
 
 House figures are named by race, e.g. `TX_house_7_method_running_margin.png`; figure 7's race-wide
 graph is `{race}_method_margin_districtwide.png`. The House comparison goes to
 `outputs/compare_states/house/`, beside the statewide one. Figure 5 is per state, counting ballots
-across every contest (House included), so it takes no district. Figures 6 and 7 are skipped for
+across every contest (House included), so it ignores `--race`. Figures 6 and 7 are skipped for
 races whose sources don't split votes by method, and 7 for race-wide-only feeds.
 
 **From the AP feed** (`{folder}/networks/ap/clean/`, or `AP_CLEAN_PATH`):
@@ -52,7 +56,7 @@ Rscript code/reporting_speed.R house   # the same for every U.S. House district
 Rscript code/race_timeline.R           # vote count updates by race, per state
 Rscript code/race_timeline.R house     # the same with one lane per U.S. House district
 Rscript code/race_timeline.R --state GA,PA --race sen --start 19:00 --end "2026-11-04 01:00"
-Rscript code/race_timeline.R --race house_7,house_8 --state VA --start 0 --end 4   # hours after poll close
+Rscript code/race_timeline.R --race house_1,house_5 --state AZ --start 0 --end 72   # hours after poll close
 ```
 
 `race_timeline.R` options: `--state` (postal codes), `--race` (AP office codes such as `sen,gov`,
@@ -67,6 +71,13 @@ House reporting speed goes to `outputs/reporting_speed/{ST}/house/`, and the Hou
 a whole county all methods), e.g. `outputs/fig2_county_reporting/NY/NY_westchester_reporting_gov_mail.png`.
 A row with a district (NY, westchester, house, 17) draws the county's precincts in that House
 district. It keeps each county's history between passes in `outputs/county_reporting/history/`.
+`--state` and `--race` narrow it to some of those rows; `--county` draws counties that aren't in
+`COUNTY_REPORTING` (one state, and `--race` required, House races with a district):
+
+```bash
+Rscript code/fig2_county_reporting_speed.R --state NY --race house_17
+Rscript code/fig2_county_reporting_speed.R --state NY --county westchester,putnam --race gov
+```
 
 If the snapshots' `election` column is wrong (it records the configured date at
 scrape time), put the real dates in `helper_files/{election folder}_dates.csv`

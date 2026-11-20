@@ -47,14 +47,29 @@ read_snapshot_file <- function(f) {
     mutate(across(c(geo, candidate, party, method, contest), as.character), district = as.integer(district))
 }
 
+snapshot_cache <- new.env()
+
+#' Every timestamped snapshot file in a clean/ folder, parsed, as a list named by path. The
+#' last folder read is kept, so a state's second race (Senate, then governor) reuses it.
+read_snapshot_folder <- function(clean_dir) {
+  files <- snapshot_files(clean_dir)
+  if (!identical(snapshot_cache$dir, clean_dir) || !identical(snapshot_cache$files, unname(files))) {
+    snapshot_cache$data <- NULL                     # free the last state before reading the next
+    snapshot_cache$data <- rlang::set_names(map(files, read_snapshot_file), files)
+    snapshot_cache$dir <- clean_dir
+    snapshot_cache$files <- unname(files)
+  }
+  snapshot_cache$data
+}
+
 #' Read every timestamped snapshot in a clean/ folder for one race
 #'
 #' `time` is taken from the file name (the string returned by `xx_timestamp()`),
 #' not from the `time` column, so it survives the csv round trip unchanged.
 #' Snapshots from before election day (test pulls) are dropped.
 read_snapshots <- function(clean_dir, target_contest, target_district = NA, election_date = NULL) {
-  snaps <- map(snapshot_files(clean_dir), \(f) {
-    read_snapshot_file(f) |>
+  snaps <- imap(read_snapshot_folder(clean_dir), \(d, f) {
+    d |>
       filter(
         .data$contest %in% target_contest,
         is_statewide(.data$contest) |
@@ -223,19 +238,8 @@ margin_sides <- function(snaps) {
 #' from its previous snapshot (or, at its first snapshot, when it has any votes).
 #' Changes that happen between two scrapes collapse into one report.
 precinct_snapshots <- function(snaps, sides) {
-  snaps |>
-    left_join(select(sides, candidate, party, side), by = c("candidate", "party")) |>
-    arrange(candidate, party, method) |>
-    summarise(
-      total = sum(votes),
-      a = sum(votes[side %in% "a"]),
-      b = sum(votes[side %in% "b"]),
-      sig = paste(votes, collapse = ","),
-      .by = c(geo, county_cbs, county, time)
-    ) |>
-    arrange(geo, time) |>
+  unit_snapshots(snaps, sides, unit = "geo", sig_order = c("candidate", "party", "method")) |>
     mutate(
-      changed = if_else(row_number() == 1, total > 0, sig != lag(sig)),
       delta = total - lag(total, default = 0),
       delta_a = a - lag(a, default = 0),
       delta_b = b - lag(b, default = 0),
@@ -252,27 +256,59 @@ precinct_snapshots <- function(snaps, sides) {
       dev_from_final = margin - final_margin,
       share_counted = total / final_total,
       increment_margin = if_else(delta > 0, 100 * (delta_a - delta_b) / delta, NA_real_)
-    ) |>
-    select(-sig)
+    )
+}
+
+#' Totals per unit (a precinct, or precinct x method) per snapshot, and whether the unit
+#' changed: at its first snapshot when it has any votes, later when any of its counts
+#' (in `sig_order`) differs from its previous snapshot. Sorted by unit and time.
+#'
+#' Grouped in data.table: these are hundreds of thousands of small groups (GA: precincts x
+#' methods x snapshots), which dplyr handles one at a time.
+unit_snapshots <- function(snaps, sides, unit, sig_order) {
+  d <- data.table::as.data.table(snaps)
+  d[data.table::as.data.table(sides)[, c("candidate", "party", "side")], on = c("candidate", "party"), side := i.side]
+  data.table::setorderv(d, sig_order)
+  g <- d[, list(total = sum(votes), a = sum(votes[side %in% "a"]), b = sum(votes[side %in% "b"]),
+                sig = paste(votes, collapse = ",")),
+         by = c("geo", "county_cbs", "county", setdiff(unit, "geo"), "time")]
+  data.table::setorderv(g, c(unit, "time"))
+  g[, changed := c(total[1] > 0, sig[-1] != sig[-.N]), by = unit]
+  g[, sig := NULL]
+  as_tibble(g)
 }
 
 #' Race-wide running tally at every snapshot
 #'
-#' Precincts missing from a snapshot carry their last known count forward.
+#' Precincts missing from a snapshot carry their last known count forward. That sum is
+#' built from each precinct's changes (running_from_changes()), not a precinct x time grid.
 race_running <- function(pt) {
-  pt |>
-    select(geo, time, total, a, b) |>
-    complete(geo, time = sort(unique(pt$time))) |>
-    arrange(geo, time) |>
-    fill(total, a, b, .by = geo) |>
-    replace_na(list(total = 0, a = 0, b = 0)) |>
-    summarise(across(c(total, a, b), sum), .by = time) |>
-    arrange(time) |>
+  running_from_changes(pt, keys = "geo", by = character(), times = sort(unique(pt$time))) |>
     mutate(
       margin = 100 * (a - b) / total,
       final_margin = last(margin),
       share_counted = total / last(total)
     )
+}
+
+#' Running totals of total, a and b at every time in `times`, for each `by` group, carrying
+#' each `keys` unit (a precinct, or precinct x method) forward from its last snapshot
+#'
+#' The sum of every unit's last known count at time t equals the running sum, up to t, of
+#' each unit's changes between its own snapshots, so only rows where a unit reported are
+#' touched. Every group gets a row at every time, as when the grid was filled forward.
+running_from_changes <- function(d, keys, by, times) {
+  changes <- d |>
+    select(all_of(unique(c(keys, by))), time, total, a, b) |>
+    arrange(time) |>
+    mutate(across(c(total, a, b), \(v) v - lag(v, default = 0)), .by = all_of(keys)) |>
+    summarise(across(c(total, a, b), sum), .by = all_of(c(by, "time")))
+  groups <- distinct(changes, across(all_of(by)))
+  tidyr::expand_grid(groups, time = times) |>
+    left_join(changes, by = c(by, "time")) |>
+    replace_na(list(total = 0, a = 0, b = 0)) |>
+    arrange(time) |>
+    mutate(across(c(total, a, b), cumsum), .by = all_of(by))
 }
 
 #' County x snapshot vote arrivals, for the count timeline
@@ -295,36 +331,15 @@ county_updates <- function(reports) {
 #'
 #' Same change rule as precinct_snapshots(), applied within each method.
 method_snapshots <- function(snaps, sides) {
-  snaps |>
-    left_join(select(sides, candidate, party, side), by = c("candidate", "party")) |>
-    arrange(candidate, party) |>
-    summarise(
-      total = sum(votes),
-      a = sum(votes[side %in% "a"]),
-      b = sum(votes[side %in% "b"]),
-      sig = paste(votes, collapse = ","),
-      .by = c(geo, county_cbs, county, method, time)
-    ) |>
-    arrange(geo, method, time) |>
-    mutate(
-      changed = if_else(row_number() == 1, total > 0, sig != lag(sig)),
-      .by = c(geo, method)
-    ) |>
-    select(-sig)
+  unit_snapshots(snaps, sides, unit = c("geo", "method"), sig_order = c("candidate", "party"))
 }
 
 #' Running tally for each method, across all precincts or within each county
 #'
-#' Precincts missing from a snapshot carry their last known count forward.
+#' Precincts missing from a snapshot carry their last known count forward (running_from_changes()).
 method_running <- function(mt, by = NULL) {
-  mt |>
-    select(geo, county, method, time, total, a, b) |>
-    complete(nesting(geo, county, method), time = sort(unique(mt$time))) |>
-    arrange(geo, method, time) |>
-    fill(total, a, b, .by = c(geo, method)) |>
-    replace_na(list(total = 0, a = 0, b = 0)) |>
-    summarise(across(c(total, a, b), sum), .by = all_of(c(by, "method", "time"))) |>
-    arrange(time) |>
+  running_from_changes(mt, keys = c("geo", "county", "method"), by = c(by, "method"),
+                       times = sort(unique(mt$time))) |>
     mutate(
       margin = 100 * (a - b) / total,
       share_counted = total / last(total),

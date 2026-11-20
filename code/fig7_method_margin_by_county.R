@@ -4,7 +4,7 @@
 # (arguments: see R/races.R):
 #   outputs/fig7_method_margin_by_county/{race_id}_method_margin_statewide.png   (districtwide for House)
 #   outputs/fig7_method_margin_by_county/{race_id}_method_margin_by_county.png
-#   Rscript code/fig7_method_margin_by_county.R "<dropbox>/26_general" sen GA,PA
+#   Rscript code/fig7_method_margin_by_county.R --race sen --state GA,PA
 source("setup.R")
 
 max_counties <- 20
@@ -62,7 +62,15 @@ plot_method_margin_by_county <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig
     geom_vline(xintercept = 0, color = "#444444", linewidth = 0.4) +
     geom_point(aes(color = method, size = final_votes), alpha = 0.85) +
     m$scale +
-    scale_size_area(max_size = 6, labels = comma, name = "Votes") +
+    # Area runs from the smallest county-method to the largest, not from zero, with a floor so
+    # small counties stay visible beside a dominant one (Maricopa in Arizona)
+    # Legend: starts at a round number near a tenth of the largest (100,000 in Arizona, where
+    # the smallest county-method has a handful of votes), then round steps up to the largest
+    scale_size(range = c(2, 7), labels = comma, name = "Votes", breaks = \(l) {
+      first <- max(l[1], signif(l[2] / 10, 1))
+      steps <- pretty(c(first, l[2]), n = 3)
+      sort(unique(c(first, steps[steps > first * 1.5 & steps <= l[2]])))
+    }) +
     margin_axis +
     labs(
       title = "Final Margin by Vote Method and County",

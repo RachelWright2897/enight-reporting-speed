@@ -2,7 +2,7 @@
 # fig6_method_running_margin.R, fig7_method_margin_by_county.R): colors, axes, and race_context(),
 # which works out a race's labels, caption and time window once so every figure agrees.
 #
-# When AP carries the race, each caption gives AP's percent of votes reported as of the feed's
+# When AP carries the race (and --ap isn't off), each caption gives AP's percent of votes reported as of the feed's
 # last snapshot (ap_race_at() in R/ap_snapshots.R). Under 99% the "final" labels give the margin at
 # that percent reporting, and figure 4's share counted is measured against AP's expected vote.
 
@@ -96,6 +96,22 @@ fresh_figure <- function(fig_dir, file) {
 # Points by which the files' final margin can differ from AP's before figures 4 and 6 draw AP's
 ap_margin_tolerance <- 0.5
 
+#' Whether figures draw on AP at all (--ap, set_figure_options() in R/races.R)
+figure_ap <- function() getOption("enr.use_ap", TRUE)
+
+#' Where a time figure ends, and the note saying so: vote_window(), unless --end says otherwise
+#' ("last": through the last update; a time: there, or the last snapshot if sooner)
+figure_window <- function(time, total, cutoff) {
+  end <- getOption("enr.end")
+  if (is.null(end)) return(vote_window(time, total, cutoff))
+  if (identical(end, "last")) return(vote_window(time, total, cutoff, min_tail = 0))
+  shown <- total[time <= end]
+  hidden <- if (length(shown) && last(total) > 0) abs(last(total) - last(shown)) / last(total) else 0
+  list(end = min(end, cutoff),
+       note = if (end < cutoff && hidden > 0) paste0("Lines end at ", as_of_et(end), "; ",
+                                                     scales::percent(hidden, accuracy = 0.1), " of votes came later."))
+}
+
 #' Where a time figure ends, and the note saying so
 #'
 #' Lines end 1 hour after the last update to the vote count, not at the feed's last snapshot
@@ -188,7 +204,7 @@ race_context <- function(x) {
   # Under 99%, "final" labels give the margin at that percent reporting (figure 7 keeps
   # its title). Primaries are left out, since AP's race for a party's primary isn't matched here.
   cutoff <- max(x$race$time)
-  ap <- if (is.na(primary)) ap_race_at(state, contest, as.integer(district), cutoff) else NULL
+  ap <- if (is.na(primary) && figure_ap()) ap_race_at(state, contest, as.integer(district), cutoff) else NULL
   partial <- !is.null(ap) && ap$pct < 99
   if (!is.null(ap)) caption <- paste0(caption, "\n", ap_caption_line(ap, state, contest, as.integer(district), cutoff))
 
@@ -205,7 +221,7 @@ race_context <- function(x) {
   # trickles and idle scrapes don't squeeze election night into a sliver. Totals still use
   # the last snapshot.
   counted <- filter(race, total > 0)
-  window <- vote_window(race$time, race$total, cutoff)
+  window <- figure_window(race$time, race$total, cutoff)
   window_end <- window$end
   late_note <- window$note
 

@@ -1,6 +1,6 @@
 # Figure 4: the race-wide running margin over election night against the final result.
 # Writes outputs/fig4_running_margin/{race_id}_running_margin.png for each race (arguments: see R/races.R).
-#   Rscript code/fig4_running_margin.R "<dropbox>/26_general" sen GA,PA
+#   Rscript code/fig4_running_margin.R --race sen --state GA,PA
 source("setup.R")
 
 plot_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig4_running_margin")) {
@@ -23,12 +23,12 @@ plot_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig4_running
     geom_hline(yintercept = 0, color = "#444444", linewidth = 0.4) +
     geom_hline(yintercept = final_margin, color = medsl_colors[["gold"]], linewidth = 0.6, linetype = "dashed") +
     annotate("text", x = race$time[label_at], y = final_margin,
-             vjust = if (label_below) 1.6 else -0.6, hjust = 0,
+             vjust = if (label_below) 2.2 else -1.2, hjust = 0,   # clear of the dashed line
              label = paste0(if (ctx$use_ap_margin) ctx$final_label else ctx$final_word, ": ", ctx$label_margin(round(final_margin, 1))),
              family = "StyreneB-Regular", size = 3.4, color = "#444444") +
     expand_limits(y = final_margin + if (label_below) -headroom else headroom) +
-    geom_step(color = "#444444", linewidth = 0.6) +
-    geom_point(aes(color = share_counted), size = 1.4) +
+    geom_step(color = "#444444", linewidth = 0.3) +
+    geom_point(aes(color = share_counted), size = 0.7) +   # small, so frequent snapshots don't merge
     # share can top 100% briefly before a downward correction; show it as fully counted
     scale_color_medsl_blue_c(labels = percent, limits = c(0, 1), breaks = c(0, 0.5, 1), oob = squish,
                              name = if (ctx$use_expected) "Share of AP expected vote counted"
@@ -38,7 +38,7 @@ plot_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig4_running
     scale_y_continuous(labels = \(v) ctx$label_margin(round(v, 1))) +
     ctx$time_scale +
     labs(
-      title = "Running Race Margin Over Election Night",
+      title = "Running Race Margin",
       subtitle = ctx$scope,
       x = "Time (ET)", y = paste(x$margin_label, "margin (pp)"),
       caption = ctx$caption, tag = join_notes(ctx$late_note)

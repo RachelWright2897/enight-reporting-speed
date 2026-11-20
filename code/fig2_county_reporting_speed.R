@@ -11,6 +11,14 @@
 # Every pass reads each of the state's {ST}/clean/{ST}_{county}_latest.csv files (and any
 # timestamped snapshots beside them) and adds snapshots it hasn't seen to a per-county history in
 # outputs/county_reporting/history/, so the lines build up over the night even from the latest files alone.
+#
+#   Rscript code/fig2_county_reporting_speed.R                        # every row of COUNTY_REPORTING
+#   Rscript code/fig2_county_reporting_speed.R --state NY             # only these states' rows
+#   Rscript code/fig2_county_reporting_speed.R --race house_17        # only these contests' rows
+#   Rscript code/fig2_county_reporting_speed.R --state NY --county westchester,putnam --race gov,house_17
+# --race takes contests (gov, sen, house for every district listed, house_17 for one), comma-
+# separated. With --county, the counties and races given are drawn instead of COUNTY_REPORTING's
+# rows: one state, and every county x race (--race required).
 source("setup.R")
 library(ggplot2)
 library(scales)
@@ -338,11 +346,38 @@ county_reporting_state <- function(state, rows, ...) {
   }
 }
 
-if (nrow(COUNTY_REPORTING) > 0) {
-  for (st in unique(COUNTY_REPORTING$state)) {
-    tryCatch(county_reporting_state(st, dplyr::filter(COUNTY_REPORTING, state == st)),
+# The rows to draw: COUNTY_REPORTING narrowed by --state and --race, or with --county the
+# counties and races given
+county_reporting_rows <- function(args = commandArgs(trailingOnly = TRUE), rows = COUNTY_REPORTING) {
+  opts <- parse_flags(args, c("state", "county", "race"))
+  states <- flag_list(opts$state, upper = TRUE)
+  races <- flag_list(opts$race)
+  parsed <- if (is.null(races)) NULL else {
+    m <- stringr::str_match(races, "^(.+?)(?:_(\\d+))?$")
+    tibble::tibble(contest = m[, 2], district = as.numeric(m[, 3]))
+  }
+  if (!is.null(opts$county)) {
+    if (length(states) != 1) cli::cli_abort("--county needs exactly one --state.")
+    if (is.null(parsed)) cli::cli_abort("--county needs --race (e.g. gov or house_17).")
+    if (any(parsed$contest == "house" & is.na(parsed$district))) cli::cli_abort("With --county, give House races a district: house_17.")
+    return(tidyr::expand_grid(state = states, county = flag_list(opts$county), parsed))
+  }
+  if (!is.null(states)) rows <- dplyr::filter(rows, state %in% states)
+  if (!is.null(parsed)) {
+    # "house" keeps every house row; "house_17" only district 17
+    keep <- purrr::map_lgl(seq_len(nrow(rows)), \(i) any(
+      rows$contest[i] == parsed$contest & (is.na(parsed$district) | rows$district[i] %in% parsed$district)
+    ))
+    rows <- rows[keep, ]
+  }
+  rows
+}
+
+tryCatch({
+  rows <- county_reporting_rows()
+  if (nrow(rows) == 0) cli::cli_alert_warning("No COUNTY_REPORTING rows match; fig2_county_reporting_speed.R drew nothing.")
+  for (st in unique(rows$state)) {
+    tryCatch(county_reporting_state(st, dplyr::filter(rows, state == st)),
              error = function(e) cli::cli_alert_danger("{st} county reporting: {conditionMessage(e)}"))
   }
-} else {
-  cli::cli_alert_warning("COUNTY_REPORTING is empty; fig2_county_reporting_speed.R drew nothing.")
-}
+}, error = function(e) cli::cli_alert_danger("fig2 county reporting: {conditionMessage(e)}"))

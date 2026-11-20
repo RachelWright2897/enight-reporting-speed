@@ -1,7 +1,7 @@
 # Figure 6: the running margin within each vote method over election night. Skipped for a race
 # that reports one method only. Writes outputs/fig6_method_running_margin/{race_id}_method_running_margin.png for
 # each race (arguments: see R/races.R).
-#   Rscript code/fig6_method_running_margin.R "<dropbox>/26_general" sen GA,PA
+#   Rscript code/fig6_method_running_margin.R --race sen --state GA,PA
 source("setup.R")
 
 plot_method_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig6_method_running_margin")) {
@@ -40,14 +40,18 @@ plot_method_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig6_
   # A method's first few votes swing wildly, so each line starts once 5% of that method is in.
   shown <- filter(method_run, share_counted >= 0.05)
 
-  # The reference line is labeled just past its end, in room the x axis leaves after the data,
-  # where it can't run into the method lines
+  # The x axis ends just after the last report. The reference line is labeled on one line at
+  # its right end, on whichever side (above or below) has more room from the method lines there.
   ref_label <- paste0(
-    if (ctx$use_ap_margin) paste0(ctx$area, " (AP,\n", round(ctx$ap_latest_pct), "% reporting)")
-    else if (ctx$partial) paste0("All methods at\n", round(ctx$ap$pct), "% reporting")
-    else "Final, all\nmethods",
-    ":\n", ctx$label_margin(round(ctx$final_margin, 1))
+    if (ctx$use_ap_margin) paste0(ctx$area, " (AP, ", round(ctx$ap_latest_pct), "% reporting)")
+    else if (ctx$partial) paste0("All methods at ", round(ctx$ap$pct), "% reporting")
+    else "Final, all methods",
+    ": ", ctx$label_margin(round(ctx$final_margin, 1))
   )
+  end_margins <- shown |> slice_max(time, n = 1, by = method) |> pull(margin)
+  gap_above <- min(c(Inf, end_margins[end_margins >= ctx$final_margin] - ctx$final_margin))
+  gap_below <- min(c(Inf, ctx$final_margin - end_margins[end_margins < ctx$final_margin]))
+  label_vjust <- if (gap_above >= gap_below) -0.5 else 1.5
 
   p <- ggplot(shown, aes(hours, margin, color = method)) +
     geom_hline(yintercept = 0, color = "#444444", linewidth = 0.4) +
@@ -55,15 +59,13 @@ plot_method_running_margin <- function(x, fig_dir = file.path(OUTPUT_DIR, "fig6_
     annotate("segment", x = -Inf, xend = max(method_run$hours), y = ctx$final_margin, yend = ctx$final_margin,
              color = "#444444", linewidth = 0.5, linetype = "dashed") +
     geom_step(linewidth = 0.5) +
-    annotate("text", x = max(method_run$hours) + 0.01 * diff(range(c(0, shown$hours, method_run$hours))),
-             y = ctx$final_margin, hjust = 0, vjust = 0.5,
-             label = ref_label, lineheight = 0.9, family = "StyreneB-Regular", size = 3,
-             color = "#444444") +
+    annotate("text", x = max(method_run$hours), y = ctx$final_margin, hjust = 1, vjust = label_vjust,
+             label = ref_label, family = "StyreneB-Regular", size = 3, color = "#444444") +
     m$scale +
     scale_y_continuous(breaks = margin_breaks, labels = \(v) ctx$label_margin(round(v, 1))) +
-    hours_axis(min(shown$hours), max(method_run$hours), right_pad = 0.17) +   # room for the label
+    hours_axis(min(shown$hours), max(method_run$hours), right_pad = 0.02) +
     labs(
-      title = "Running Margin by Vote Method Over Election Night",
+      title = "Share of Each Vote Method Counted",
       subtitle = subtitle,
       x = x_title, y = paste(x$margin_label, "margin (pp)"),
       caption = ctx$caption,
